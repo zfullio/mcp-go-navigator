@@ -1,125 +1,20 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"go/ast"
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/go/packages"
 )
-
-// packageCache stores loaded packages by directory to avoid redundant parsing
-var packageCache = struct {
-	sync.RWMutex
-	pkgs map[string][]*packages.Package
-}{
-	pkgs: make(map[string][]*packages.Package),
-}
-
-type ListPackagesInput struct {
-	Dir string `json:"dir" jsonschema:"directory to scan for packages"`
-}
-
-type ListPackagesOutput struct {
-	Packages []string `json:"packages" jsonschema:"list of package paths"`
-}
-
-type ListSymbolsInput struct {
-	Dir     string `json:"dir"     jsonschema:"directory to scan for packages"`
-	Package string `json:"package" jsonschema:"package path to inspect"`
-}
-
-type Symbol struct {
-	Kind string `json:"kind"`
-	Name string `json:"name"`
-	File string `json:"file"`
-	Line int    `json:"line"`
-}
-
-type ListSymbolsOutput struct {
-	Symbols []Symbol `json:"symbols"`
-}
-
-type FindReferencesInput struct {
-	Dir   string `json:"dir"   jsonschema:"directory to scan"`
-	Ident string `json:"ident" jsonschema:"identifier to search for"`
-}
-
-type Reference struct {
-	File    string `json:"file"`
-	Line    int    `json:"line"`
-	Snippet string `json:"snippet"`
-}
-
-type FindReferencesOutput struct {
-	References []Reference `json:"references"`
-}
-
-type FindDefinitionsInput struct {
-	Dir   string `json:"dir"   jsonschema:"directory to scan"`
-	Ident string `json:"ident" jsonschema:"identifier to search for definition"`
-}
-
-type Definition struct {
-	File    string `json:"file"`
-	Line    int    `json:"line"`
-	Snippet string `json:"snippet"`
-}
-
-type FindDefinitionsOutput struct {
-	Definitions []Definition `json:"definitions"`
-}
-
-type RenameSymbolInput struct {
-	Dir     string `json:"dir"     jsonschema:"directory to scan"`
-	OldName string `json:"oldName" jsonschema:"symbol name to rename"`
-	NewName string `json:"newName" jsonschema:"new symbol name"`
-}
-
-type RenameSymbolOutput struct {
-	ChangedFiles []string `json:"changedFiles"`
-}
-
-type ListImportsInput struct {
-	Dir string `json:"dir" jsonschema:"directory to scan for Go files"`
-}
-
-type Import struct {
-	Path string `json:"path"`
-	File string `json:"file"`
-	Line int    `json:"line"`
-}
-
-type ListImportsOutput struct {
-	Imports []Import `json:"imports"`
-}
-
-type ListInterfacesInput struct {
-	Dir string `json:"dir" jsonschema:"directory to scan for Go files"`
-}
-
-type InterfaceMethod struct {
-	Name string `json:"name"`
-	Line int    `json:"line"`
-}
-
-type InterfaceInfo struct {
-	Name    string            `json:"name"`
-	File    string            `json:"file"`
-	Line    int               `json:"line"`
-	Methods []InterfaceMethod `json:"methods"`
-}
-
-type ListInterfacesOutput struct {
-	Interfaces []InterfaceInfo `json:"interfaces"`
-}
 
 func ListPackages(ctx context.Context, req *mcp.CallToolRequest, input ListPackagesInput) (
 	*mcp.CallToolResult,
@@ -159,9 +54,20 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 	out := ListSymbolsOutput{Symbols: []Symbol{}}
 
 	for _, pkg := range pkgs {
+		if ctxCancelled(ctx) {
+			return nil, out, ctx.Err()
+		}
+
 		for _, file := range pkg.Syntax {
 			fname := pkg.Fset.File(file.Pos()).Name()
 			ast.Inspect(file, func(n ast.Node) bool {
+				// Check context cancellation during AST traversal
+				select {
+				case <-ctx.Done():
+					return false
+				default:
+				}
+
 				switch decl := n.(type) {
 				case *ast.FuncDecl:
 					out.Symbols = append(out.Symbols, Symbol{
@@ -224,11 +130,22 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 	out := FindReferencesOutput{References: []Reference{}}
 
 	for _, pkg := range pkgs {
+		if ctxCancelled(ctx) {
+			return nil, out, ctx.Err()
+		}
+
 		for _, file := range pkg.Syntax {
 			fname := pkg.Fset.File(file.Pos()).Name()
 			lines := getFileLines(pkg.Fset, file)
 
 			ast.Inspect(file, func(n ast.Node) bool {
+				// Check context cancellation during AST traversal
+				select {
+				case <-ctx.Done():
+					return false
+				default:
+				}
+
 				if ident, ok := n.(*ast.Ident); ok && ident.Name == input.Ident {
 					pos := pkg.Fset.Position(ident.Pos())
 
@@ -266,20 +183,28 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 	out := FindDefinitionsOutput{Definitions: []Definition{}}
 
 	for _, pkg := range pkgs {
+		if ctxCancelled(ctx) {
+			return nil, out, ctx.Err()
+		}
+
 		for _, file := range pkg.Syntax {
 			fname := pkg.Fset.File(file.Pos()).Name()
 			lines := getFileLines(pkg.Fset, file)
 
 			ast.Inspect(file, func(n ast.Node) bool {
+				// Check context cancellation during AST traversal
+				select {
+				case <-ctx.Done():
+					return false
+				default:
+				}
+
 				switch decl := n.(type) {
 				case *ast.TypeSpec:
 					if decl.Name.Name == input.Ident {
 						pos := pkg.Fset.Position(decl.Pos())
 
-						snip := ""
-						if pos.Line-1 < len(lines) {
-							snip = strings.TrimSpace(lines[pos.Line-1])
-						}
+						snip := extractSnippet(lines, pos.Line)
 
 						out.Definitions = append(out.Definitions, Definition{
 							File:    fname,
@@ -291,10 +216,7 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 					if decl.Name.Name == input.Ident {
 						pos := pkg.Fset.Position(decl.Pos())
 
-						snip := ""
-						if pos.Line-1 < len(lines) {
-							snip = strings.TrimSpace(lines[pos.Line-1])
-						}
+						snip := extractSnippet(lines, pos.Line)
 
 						out.Definitions = append(out.Definitions, Definition{
 							File:    fname,
@@ -352,6 +274,12 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 			return nil
 		}
 
+		// Read original content to compare later
+		originalContent, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
 		fset := token.NewFileSet()
 
 		node, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
@@ -380,17 +308,29 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 		})
 
 		if changed {
-			out.ChangedFiles = append(out.ChangedFiles, path)
-
-			f, err := os.Create(path)
+			// Write the modified AST to buffer to compare with original
+			var buf bytes.Buffer
+			err = printer.Fprint(&buf, fset, node)
 			if err != nil {
 				return err
 			}
-			defer f.Close()
 
-			err = printer.Fprint(f, fset, node)
-			if err != nil {
-				return err
+			newContent := buf.Bytes()
+
+			// Only write if content actually changed
+			if !bytes.Equal(originalContent, newContent) {
+				out.ChangedFiles = append(out.ChangedFiles, path)
+
+				f, err := os.Create(path)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+
+				_, err = f.Write(newContent)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
@@ -417,9 +357,20 @@ func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImport
 	out := ListImportsOutput{Imports: []Import{}}
 
 	for _, pkg := range pkgs {
+		if ctxCancelled(ctx) {
+			return nil, out, ctx.Err()
+		}
+
 		for _, file := range pkg.Syntax {
 			fname := pkg.Fset.File(file.Pos()).Name()
 			for _, imp := range file.Imports {
+				// Check context cancellation during processing
+				select {
+				case <-ctx.Done():
+					return nil, out, ctx.Err()
+				default:
+				}
+
 				path := strings.Trim(imp.Path.Value, `"`)
 				pos := pkg.Fset.Position(imp.Pos())
 
@@ -449,9 +400,20 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 	out := ListInterfacesOutput{Interfaces: []InterfaceInfo{}}
 
 	for _, pkg := range pkgs {
+		if ctxCancelled(ctx) {
+			return nil, out, ctx.Err()
+		}
+
 		for _, file := range pkg.Syntax {
 			fname := pkg.Fset.File(file.Pos()).Name()
 			ast.Inspect(file, func(n ast.Node) bool {
+				// Check context cancellation during AST traversal
+				select {
+				case <-ctx.Done():
+					return false
+				default:
+				}
+
 				ts, ok := n.(*ast.TypeSpec)
 				if !ok {
 					return true
@@ -485,41 +447,157 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 	return nil, out, nil
 }
 
-// loadPackagesWithCache loads packages with directory-based caching
-func loadPackagesWithCache(ctx context.Context, dir string, mode packages.LoadMode) ([]*packages.Package, error) {
-	packageCache.RLock()
-	cachedPkgs, exists := packageCache.pkgs[dir]
-	packageCache.RUnlock()
+func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input AnalyzeComplexityInput) (
+	*mcp.CallToolResult,
+	AnalyzeComplexityOutput,
+	error,
+) {
+	out := AnalyzeComplexityOutput{Functions: []FunctionComplexity{}}
 
-	if exists {
-		return cachedPkgs, nil
-	}
-
-	cfg := &packages.Config{
-		Mode:    mode,
-		Dir:     dir,
-		Context: ctx,
-	}
-
-	pkgs, err := packages.Load(cfg, "./...")
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, input.Dir, nil, parser.ParseComments)
 	if err != nil {
-		return nil, err
+		return nil, out, err
 	}
 
-	// Cache the packages
-	packageCache.Lock()
-	packageCache.pkgs[dir] = pkgs
-	packageCache.Unlock()
+	for _, pkg := range pkgs {
+		// Check context cancellation between packages
+		select {
+		case <-ctx.Done():
+			return nil, out, ctx.Err()
+		default:
+		}
 
-	return pkgs, nil
+		for fname, file := range pkg.Files {
+			ast.Inspect(file, func(n ast.Node) bool {
+				// Check context cancellation during AST traversal
+				select {
+				case <-ctx.Done():
+					return false
+				default:
+				}
+
+				fd, ok := n.(*ast.FuncDecl)
+				if !ok || fd.Body == nil {
+					return true
+				}
+
+				pos := fset.Position(fd.Pos())
+				lines := fset.Position(fd.End()).Line - pos.Line
+
+				// метрики
+				nesting := 0
+				maxNesting := 0
+				cyclomatic := 1 // минимум = 1
+
+				ast.Inspect(fd.Body, func(n ast.Node) bool {
+					// Check context cancellation during inner AST traversal
+					select {
+					case <-ctx.Done():
+						return false
+					default:
+					}
+
+					switch n.(type) {
+					case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+						nesting++
+						if nesting > maxNesting {
+							maxNesting = nesting
+						}
+						cyclomatic++
+					case *ast.CaseClause:
+						cyclomatic++
+					}
+					return true
+				})
+
+				out.Functions = append(out.Functions, FunctionComplexity{
+					Name:       fd.Name.Name,
+					File:       fname,
+					Line:       pos.Line,
+					Lines:      lines,
+					Nesting:    maxNesting,
+					Cyclomatic: cyclomatic,
+				})
+
+				return true
+			})
+		}
+	}
+
+	return nil, out, nil
 }
 
-// getFileLines extracts the lines of a file from the AST for snippet generation
-func getFileLines(fset *token.FileSet, file *ast.File) []string {
-	filename := fset.File(file.Pos()).Name()
-	src, err := os.ReadFile(filename)
-	if err != nil {
-		return []string{} // Return empty if file can't be read
+func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput) (
+	*mcp.CallToolResult,
+	DeadCodeOutput,
+	error,
+) {
+	out := DeadCodeOutput{Unused: []DeadSymbol{}}
+
+	cfg := &packages.Config{
+		Mode:    packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedFiles,
+		Dir:     input.Dir,
+		Context: ctx,
 	}
-	return strings.Split(string(src), "\n")
+	pkgs, err := packages.Load(cfg, "./...")
+	if err != nil {
+		return nil, out, err
+	}
+
+	for _, pkg := range pkgs {
+		if ctxCancelled(ctx) {
+			return nil, out, ctx.Err()
+		}
+
+		used := map[types.Object]bool{}
+
+		// Все использования
+		for _, obj := range pkg.TypesInfo.Uses {
+			if obj != nil {
+				used[obj] = true
+			}
+		}
+
+		// Проверяем определения
+		for ident, obj := range pkg.TypesInfo.Defs {
+			// Check context cancellation during processing
+			select {
+			case <-ctx.Done():
+				return nil, out, ctx.Err()
+			default:
+			}
+
+			if obj == nil {
+				continue
+			}
+
+			// Пропускаем экспортируемые символы (начинаются с заглавной буквы)
+			if ast.IsExported(ident.Name) {
+				continue
+			}
+
+			if _, ok := used[obj]; !ok {
+				pos := pkg.Fset.Position(ident.Pos())
+				kind := "var"
+				switch obj.(type) {
+				case *types.Func:
+					kind = "func"
+				case *types.TypeName:
+					kind = "type"
+				case *types.Const:
+					kind = "const"
+				}
+
+				out.Unused = append(out.Unused, DeadSymbol{
+					Name: ident.Name,
+					Kind: kind,
+					File: pos.Filename,
+					Line: pos.Line,
+				})
+			}
+		}
+	}
+
+	return nil, out, nil
 }

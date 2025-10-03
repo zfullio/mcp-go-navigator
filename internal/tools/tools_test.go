@@ -255,6 +255,148 @@ func TestListInterfaces(t *testing.T) {
 	}
 }
 
+func TestAnalyzeComplexity(t *testing.T) {
+	in := tools.AnalyzeComplexityInput{Dir: testDir()}
+
+	_, out, err := tools.AnalyzeComplexity(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("AnalyzeComplexity error: %v", err)
+	}
+
+	if len(out.Functions) == 0 {
+		t.Fatalf("expected at least 1 function, got 0")
+	}
+
+	// Карта по именам функций
+	funcs := map[string]tools.FunctionComplexity{}
+	for _, f := range out.Functions {
+		funcs[f.Name] = f
+	}
+
+	// Проверяем Simple
+	if f, ok := funcs["Simple"]; !ok {
+		t.Errorf("expected function Simple, got %+v", funcs)
+	} else {
+		if f.Cyclomatic != 1 {
+			t.Errorf("expected Simple cyclomatic=1, got %d", f.Cyclomatic)
+		}
+	}
+
+	// Проверяем WithIf
+	if f, ok := funcs["WithIf"]; !ok {
+		t.Errorf("expected function WithIf, got %+v", funcs)
+	} else {
+		if f.Cyclomatic < 2 {
+			t.Errorf("expected WithIf cyclomatic>=2, got %d", f.Cyclomatic)
+		}
+		if f.Nesting < 1 {
+			t.Errorf("expected WithIf nesting>=1, got %d", f.Nesting)
+		}
+	}
+
+	// Проверяем WithLoopAndSwitch
+	if f, ok := funcs["WithLoopAndSwitch"]; !ok {
+		t.Errorf("expected function WithLoopAndSwitch, got %+v", funcs)
+	} else {
+		if f.Cyclomatic < 3 {
+			t.Errorf("expected WithLoopAndSwitch cyclomatic>=3, got %d", f.Cyclomatic)
+		}
+		if f.Nesting < 2 {
+			t.Errorf("expected WithLoopAndSwitch nesting>=2, got %d", f.Nesting)
+		}
+	}
+}
+
+func TestDeadCode(t *testing.T) {
+	in := tools.DeadCodeInput{Dir: testDir()}
+
+	_, out, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("DeadCode error: %v", err)
+	}
+
+	if len(out.Unused) == 0 {
+		t.Fatalf("expected unused symbols, got 0")
+	}
+
+	// собираем имена
+	names := map[string]bool{}
+	for _, d := range out.Unused {
+		names[d.Name] = true
+	}
+
+	// проверяем все dead-символы
+	expected := []string{"deadVar", "deadConst", "deadType", "deadFunc"}
+	for _, e := range expected {
+		if !names[e] {
+			t.Errorf("expected to find dead symbol %s, but not found", e)
+		}
+	}
+}
+
+func TestDeadCodeWithMethods(t *testing.T) {
+	in := tools.DeadCodeInput{Dir: testDir()}
+
+	_, out, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("DeadCode error: %v", err)
+	}
+
+	names := map[string]bool{}
+	for _, d := range out.Unused {
+		names[d.Name] = true
+	}
+
+	// проверяем, что deadHelper найден
+	if !names["deadHelper"] {
+		t.Errorf("expected to find unused method 'deadHelper', but not found")
+	}
+
+	// DoSomething используется → не должен попасть в deadCode
+	if names["DoSomething"] {
+		t.Errorf("did not expect 'DoSomething' to be marked as unused")
+	}
+}
+
+func TestDeadCode_AllKinds(t *testing.T) {
+	in := tools.DeadCodeInput{Dir: testDir()}
+
+	_, out, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("DeadCode error: %v", err)
+	}
+
+	names := map[string]bool{}
+	for _, d := range out.Unused {
+		names[d.Name] = true
+	}
+
+	// Проверяем приватный метод
+	if !names["deadHelper"] {
+		t.Errorf("expected to find unused method 'deadHelper', but not found")
+	}
+
+	// Проверяем переменную
+	if !names["unusedVar"] {
+		t.Errorf("expected to find unused variable 'unusedVar', but not found")
+	}
+
+	// Проверяем константу
+	if !names["unusedConst"] {
+		t.Errorf("expected to find unused constant 'unusedConst', but not found")
+	}
+
+	// Проверяем тип
+	if !names["unusedType"] {
+		t.Errorf("expected to find unused type 'unusedType', but not found")
+	}
+
+	// Проверяем, что DoSomething (используется) не попал
+	if names["DoSomething"] {
+		t.Errorf("did not expect 'DoSomething' to be marked as unused")
+	}
+}
+
 func copyDir(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -284,4 +426,55 @@ func testDir() string {
 	_, filename, _, _ := runtime.Caller(0)
 
 	return filepath.Join(filepath.Dir(filename), "testdata", "sample")
+}
+
+func benchDir() string {
+	_, filename, _, _ := runtime.Caller(0)
+	// укажем testdata/sample как тестовый проект
+	return filepath.Join(filepath.Dir(filename), "testdata", "sample")
+}
+
+// BenchmarkFindReferences — измеряет скорость поиска ссылок
+func BenchmarkFindReferences(b *testing.B) {
+	in := tools.FindReferencesInput{
+		Dir:   benchDir(),
+		Ident: "Foo",
+	}
+
+	for i := 0; i < b.N; i++ {
+		_, _, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
+		if err != nil {
+			b.Fatalf("FindReferences error: %v", err)
+		}
+	}
+}
+
+// BenchmarkFindDefinitions — измеряет скорость поиска определений
+func BenchmarkFindDefinitions(b *testing.B) {
+	in := tools.FindDefinitionsInput{
+		Dir:   benchDir(),
+		Ident: "Foo",
+	}
+
+	for i := 0; i < b.N; i++ {
+		_, _, err := tools.FindDefinitions(context.Background(), &mcp.CallToolRequest{}, in)
+		if err != nil {
+			b.Fatalf("FindDefinitions error: %v", err)
+		}
+	}
+}
+
+// BenchmarkListSymbols — измеряет скорость обхода символов
+func BenchmarkListSymbols(b *testing.B) {
+	in := tools.ListSymbolsInput{
+		Dir:     benchDir(),
+		Package: "./...",
+	}
+
+	for i := 0; i < b.N; i++ {
+		_, _, err := tools.ListSymbols(context.Background(), &mcp.CallToolRequest{}, in)
+		if err != nil {
+			b.Fatalf("ListSymbols error: %v", err)
+		}
+	}
 }

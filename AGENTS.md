@@ -227,14 +227,28 @@ When analyzing a Go project for errors or suspicious code, always use the **go-n
         - interfaces with a single trivial method (replace with function?),
         - very large interfaces (violate SRP).
 
-5. **Drill down on suspicious symbols**
+5. **Check function complexity**
+    - Tool: `analyzeComplexity`
+    - Goal: measure lines of code, nesting depth, and cyclomatic complexity for each function.
+    - Flag candidates for refactoring if:
+        - Cyclomatic > 10,
+        - Lines > 50,
+        - Nesting depth too high (>3–4).
+
+6. **Detect dead code**
+    - Tool: `deadCode`
+    - Goal: find unused (non-exported) functions, methods, types, variables, and constants.
+    - Helps keep the codebase clean by removing unused code.
+    - Optionally: run with `includeExported=true` to also detect unused public API in internal packages.
+
+7. **Drill down on suspicious symbols**
     - Tool: `findDefinitions`  
       → locate the source definition of a symbol.
     - Tool: `findReferences`  
       → list all usage locations of that symbol.
-    - Use these when you need to confirm how a symbol is defined or if it's over-used across the codebase.
+    - Use these when you need to confirm how a symbol is defined or if it’s over-used across the codebase.
 
-6. **Check refactoring feasibility**
+8. **Check refactoring feasibility**
     - Tool: `renameSymbol` (optional, preview changes)
     - Goal: test how safely a symbol can be renamed.
     - Use this for generic names like `Do`, `Handle`, `Manager` to suggest better alternatives.
@@ -245,9 +259,9 @@ When analyzing a Go project for errors or suspicious code, always use the **go-n
 
 - **Always prefer go-navigator tools** for project analysis.
 - **Start broad** (`listPackages`, `listSymbols`) before doing focused checks (`findDefinitions`, `findReferences`).
+- **Use `analyzeComplexity` + `deadCode`** to propose refactorings and cleanups.
 - **Combine imports + interfaces** analysis to detect architectural issues.
 - **Propose renames or extractions** only after verifying usage with `findReferences`.
-
 
 
 ## Qwen Added Memories

@@ -60,6 +60,18 @@ Use this to review project dependencies, detect unused imports, or identify wher
 Use this to explore contracts in the project, discover points for dependency injection, or identify interfaces that may need mocks for testing.`,
 	}, tools.ListInterfaces)
 
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "analyzeComplexity",
+		Description: `Analyzes Go functions and reports metrics: lines of code, nesting depth, and cyclomatic complexity.
+Use this to identify overly complex functions that may need refactoring.`,
+	}, tools.AnalyzeComplexity)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "deadCode",
+		Description: `Finds unused (dead) code in a Go project.
+Reports functions, variables, constants, and types that are defined but never used inside the package (ignores exported symbols).`,
+	}, tools.DeadCode)
+
 	// Run server
 	err := server.Run(context.Background(), &mcp.StdioTransport{})
 	if err != nil {
