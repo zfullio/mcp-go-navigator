@@ -1,14 +1,19 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"go/ast"
+	"go/parser"
+	"go/printer"
 	"go/token"
+	"go/types"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -100,4 +105,57 @@ func extractSnippet(lines []string, line int) string {
 	}
 
 	return ""
+}
+
+func objStringKind(obj types.Object) string {
+	switch obj.(type) {
+	case *types.Func:
+		return "func"
+	case *types.Var:
+		return "var"
+	case *types.Const:
+		return "const"
+	case *types.TypeName:
+		return "type"
+	case *types.PkgName:
+		return "package"
+	default:
+		return "unknown"
+	}
+}
+
+func shouldStop(ctx context.Context) bool {
+	return ctx.Err() != nil
+}
+
+func fail[T any](out T, err error) (*mcp.CallToolResult, T, error) {
+	return nil, out, err
+}
+
+func symbolPos(pkg *packages.Package, n ast.Node) token.Position {
+	return pkg.Fset.Position(n.Pos())
+}
+
+func safeWriteFile(path string, data []byte) error {
+	tmp := path + ".tmp"
+
+	err := os.WriteFile(tmp, data, 0o644)
+	if err != nil {
+		return err
+	}
+
+	return os.Rename(tmp, path)
+}
+
+// astCopy делает безопасную копию AST-файла без изменения кэшированных пакетов.
+func astCopy(src *ast.File) *ast.File {
+	var buf bytes.Buffer
+
+	fset := token.NewFileSet()
+	_ = printer.Fprint(&buf, fset, src)
+
+	newFset := token.NewFileSet()
+	node, _ := parser.ParseFile(newFset, "", buf.String(), parser.ParseComments)
+
+	return node
 }

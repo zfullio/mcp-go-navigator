@@ -54,16 +54,6 @@ type FindDefinitionsOutput struct {
 	Definitions []Definition `json:"definitions"`
 }
 
-type RenameSymbolInput struct {
-	Dir     string `json:"dir"     jsonschema:"directory to scan"`
-	OldName string `json:"oldName" jsonschema:"symbol name to rename"`
-	NewName string `json:"newName" jsonschema:"new symbol name"`
-}
-
-type RenameSymbolOutput struct {
-	ChangedFiles []string `json:"changedFiles"`
-}
-
 type ListImportsInput struct {
 	Dir string `json:"dir" jsonschema:"directory to scan for Go files"`
 }
@@ -128,4 +118,23 @@ type DeadSymbol struct {
 
 type DeadCodeOutput struct {
 	Unused []DeadSymbol `json:"unused"`
+}
+
+type RenameSymbolInput struct {
+	Dir     string `json:"dir"              jsonschema:"directory to scan"`
+	OldName string `json:"oldName"          jsonschema:"symbol name to rename"`
+	NewName string `json:"newName"          jsonschema:"new symbol name"`
+	Kind    string `json:"kind,omitempty"   jsonschema:"symbol kind: func, var, const, type, package"`
+	DryRun  bool   `json:"dryRun,omitempty" jsonschema:"if true, return diff instead of writing files"`
+}
+
+type FileDiff struct {
+	Path string `json:"path"`
+	Diff string `json:"diff"`
+}
+
+type RenameSymbolOutput struct {
+	ChangedFiles []string   `json:"changedFiles"`
+	Diffs        []FileDiff `json:"diffs,omitempty"`
+	Collisions   []string   `json:"collisions,omitempty"`
 }

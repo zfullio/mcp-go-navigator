@@ -3,17 +3,18 @@ package tools
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/printer"
 	"go/token"
 	"go/types"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/pmezard/go-difflib/difflib"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -247,81 +248,130 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 	RenameSymbolOutput,
 	error,
 ) {
-	out := RenameSymbolOutput{ChangedFiles: []string{}}
+	out := RenameSymbolOutput{}
 
-	err := filepath.Walk(input.Dir, func(path string, info os.FileInfo, err error) error {
-		// Check context cancellation periodically
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+	if input.OldName == input.NewName {
+		out.Collisions = append(out.Collisions,
+			fmt.Sprintf("cannot rename: %q and %q are the same name", input.OldName, input.NewName))
 
-		if err != nil {
-			return err
-		}
+		return nil, out, nil
+	}
 
-		if info.IsDir() || !strings.HasSuffix(path, ".go") {
-			return nil
-		}
-
-		// Read original content to compare later
-		originalContent, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		fset := token.NewFileSet()
-
-		node, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
-		if err != nil {
-			return err
-		}
-
-		changed := false
-
-		ast.Inspect(node, func(n ast.Node) bool {
-			if shouldStop(ctx) {
-				return false
-			}
-
-			if ident, ok := n.(*ast.Ident); ok {
-				if ident.Name == input.OldName {
-					ident.Name = input.NewName
-					changed = true
-				}
-			}
-
-			return true
-		})
-
-		if changed {
-			buf := bufPool.Get().(*bytes.Buffer)
-
-			buf.Reset()
-			defer bufPool.Put(buf)
-
-			err = printer.Fprint(buf, fset, node)
-			if err != nil {
-				return err
-			}
-
-			newContent := buf.Bytes()
-
-			// Only write if content actually changed
-			if !bytes.Equal(originalContent, newContent) {
-				out.ChangedFiles = append(out.ChangedFiles, path)
-				err := safeWriteFile(path, newContent)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		return nil
-	})
+	pkgs, err := loadPackagesWithCache(ctx, input.Dir,
+		packages.NeedSyntax|packages.NeedTypes|packages.NeedTypesInfo|packages.NeedCompiledGoFiles)
 	if err != nil {
 		return fail(out, err)
+	}
+
+	if len(pkgs) == 0 {
+		return fail(out, fmt.Errorf("no packages loaded from dir: %s", input.Dir))
+	}
+
+	for _, pkg := range pkgs {
+		if ctx.Err() != nil {
+			return fail(out, ctx.Err())
+		}
+
+		for i, file := range pkg.Syntax {
+			fset := pkg.Fset
+			filename := pkg.CompiledGoFiles[i]
+
+			// ✅ создаём независимую копию AST, чтобы не мутировать кэш
+			cloned := astCopy(file)
+
+			origBytes, err := os.ReadFile(filename)
+			if err != nil {
+				return fail(out, err)
+			}
+
+			changed := false
+
+			ast.Inspect(cloned, func(n ast.Node) bool {
+				if ctx.Err() != nil {
+					return false
+				}
+
+				// --- Fallback: TypeSpec для объявлений типов ---
+				if ts, ok := n.(*ast.TypeSpec); ok {
+					if ts.Name.Name == input.OldName && (input.Kind == "" || input.Kind == "type") {
+						// Проверка коллизии
+						if ts.Name.Name == input.NewName {
+							pos := fset.Position(ts.Pos())
+							out.Collisions = append(out.Collisions,
+								fmt.Sprintf("%s:%d (type name already %s)", pos.Filename, pos.Line, input.NewName))
+
+							return true
+						}
+
+						ts.Name.Name = input.NewName
+						changed = true
+
+						return true
+					}
+				}
+
+				// --- Основной вариант: любые идентификаторы ---
+				ident, ok := n.(*ast.Ident)
+				if !ok || ident.Name != input.OldName {
+					return true
+				}
+
+				obj := pkg.TypesInfo.ObjectOf(ident)
+				if obj == nil {
+					return true
+				}
+
+				// Фильтр по виду (если задан)
+				if input.Kind != "" && objStringKind(obj) != input.Kind {
+					return true
+				}
+
+				// Проверка коллизий в области видимости
+				if obj.Parent() != nil {
+					if other := obj.Parent().Lookup(input.NewName); other != nil {
+						pos := fset.Position(ident.Pos())
+						out.Collisions = append(out.Collisions,
+							fmt.Sprintf("%s:%d (conflict with %s)", pos.Filename, pos.Line, other.Name()))
+
+						return true
+					}
+				}
+
+				ident.Name = input.NewName
+				changed = true
+
+				return true
+			})
+
+			if changed {
+				var buf bytes.Buffer
+				err := printer.Fprint(&buf, fset, cloned)
+				if err != nil {
+					return fail(out, err)
+				}
+
+				newContent := buf.Bytes()
+
+				if input.DryRun {
+					diff := difflib.UnifiedDiff{
+						A:        difflib.SplitLines(string(origBytes)),
+						B:        difflib.SplitLines(string(newContent)),
+						FromFile: "before",
+						ToFile:   "after",
+						Context:  3,
+					}
+					text, _ := difflib.GetUnifiedDiffString(diff)
+					out.Diffs = append(out.Diffs, FileDiff{Path: filename, Diff: text})
+				} else {
+					err := safeWriteFile(filename, newContent)
+					if err != nil {
+						return fail(out, err)
+					}
+
+					out.ChangedFiles = append(out.ChangedFiles, filename)
+				}
+			}
+		}
 	}
 
 	return nil, out, nil
@@ -583,7 +633,7 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 				pos := pkg.Fset.Position(ident.Pos())
 				out.Unused = append(out.Unused, DeadSymbol{
 					Name: ident.Name,
-					Kind: kindOf(obj),
+					Kind: objStringKind(obj),
 					File: pos.Filename,
 					Line: pos.Line,
 				})
@@ -592,39 +642,4 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 	}
 
 	return nil, out, nil
-}
-
-func kindOf(obj types.Object) string {
-	switch obj.(type) {
-	case *types.Func:
-		return "func"
-	case *types.TypeName:
-		return "type"
-	case *types.Const:
-		return "const"
-	default:
-		return "var"
-	}
-}
-
-func shouldStop(ctx context.Context) bool {
-	return ctx.Err() != nil
-}
-
-func fail[T any](out T, err error) (*mcp.CallToolResult, T, error) {
-	return nil, out, err
-}
-
-func symbolPos(pkg *packages.Package, n ast.Node) token.Position {
-	return pkg.Fset.Position(n.Pos())
-}
-
-func safeWriteFile(path string, data []byte) error {
-	tmp := path + ".tmp"
-	err := os.WriteFile(tmp, data, 0o644)
-	if err != nil {
-		return err
-	}
-
-	return os.Rename(tmp, path)
 }

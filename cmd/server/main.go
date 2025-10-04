@@ -43,8 +43,17 @@ Use this when you need to jump to or confirm the exact definition of an identifi
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "renameSymbol",
-		Description: `Renames all occurrences of an identifier across Go source files in a directory.
-Use this when you need to perform safe, consistent refactoring by updating a symbol’s name everywhere it appears in the code.`,
+		Description: `Performs a precise, scope-aware rename of a Go symbol across the entire project.
+
+Unlike the basic renameSymbol, this version uses go/packages and go/types analysis
+to locate all valid references of the target symbol and rename them safely within their scope.
+
+It supports:
+  • Dry-run mode (set "dryRun": true) — returns unified diffs instead of modifying files
+  • Collision detection — reports name conflicts before applying changes
+  • Selective renaming by kind ("type", "func", "var", "const", etc.)
+
+Use this tool when you need reliable, type-safe refactoring rather than text-based search.`,
 	}, tools.RenameSymbol)
 
 	mcp.AddTool(server, &mcp.Tool{

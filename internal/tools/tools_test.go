@@ -32,7 +32,7 @@ func TestListPackages(t *testing.T) {
 	found := false
 
 	for _, p := range out.Packages {
-		if strings.Contains(p, "testdata") {
+		if strings.Contains(p, "sample") {
 			found = true
 
 			break
@@ -450,23 +450,15 @@ func BenchmarkListSymbols(b *testing.B) {
 }
 
 func BenchmarkRenameSymbol(b *testing.B) {
-	// исходная директория для тестов
-	srcDir := benchDir() // твоя функция, которая отдаёт каталог с тестовым кодом
+	srcDir := benchDir()
+	tmpDir := b.TempDir()
+	copyDir(srcDir, tmpDir)
 
+	in := tools.RenameSymbolInput{Dir: tmpDir, OldName: "Foo", NewName: "Bar"}
 	for range b.N {
-		// копируем каталог в tmp, чтобы каждый прогон был на «чистом» коде
-		tmpDir := b.TempDir()
-		copyDir(srcDir, tmpDir)
-
-		in := tools.RenameSymbolInput{
-			Dir:     tmpDir,
-			OldName: "Foo",
-			NewName: "Bar",
-		}
-
 		_, _, err := tools.RenameSymbol(context.Background(), &mcp.CallToolRequest{}, in)
 		if err != nil {
-			b.Fatalf("RenameSymbol error: %v", err)
+			b.Fatal(err)
 		}
 	}
 }
