@@ -11,10 +11,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/go/packages"
 )
+
+var bufPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 
 func ListPackages(ctx context.Context, req *mcp.CallToolRequest, input ListPackagesInput) (
 	*mcp.CallToolResult,
@@ -22,17 +25,18 @@ func ListPackages(ctx context.Context, req *mcp.CallToolRequest, input ListPacka
 	error,
 ) {
 	cfg := &packages.Config{
-		Mode:    packages.NeedName | packages.NeedFiles,
+		Mode:    packages.NeedName | packages.NeedCompiledGoFiles,
 		Dir:     input.Dir,
 		Context: ctx,
 	}
 
+	out := ListPackagesOutput{Packages: []string{}}
+
 	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
-		return nil, ListPackagesOutput{}, err
+		return fail(out, err)
 	}
 
-	out := ListPackagesOutput{Packages: []string{}}
 	for _, pkg := range pkgs {
 		out.Packages = append(out.Packages, pkg.PkgPath)
 	}
@@ -45,27 +49,25 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 	ListSymbolsOutput,
 	error,
 ) {
-	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedFiles | packages.NeedTypesInfo
+	out := ListSymbolsOutput{Symbols: []Symbol{}}
+
+	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedCompiledGoFiles | packages.NeedTypesInfo
+
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
-		return nil, ListSymbolsOutput{}, err
+		return fail(out, err)
 	}
-
-	out := ListSymbolsOutput{Symbols: []Symbol{}}
 
 	for _, pkg := range pkgs {
 		if ctxCancelled(ctx) {
-			return nil, out, ctx.Err()
+			return fail(out, ctx.Err())
 		}
 
 		for _, file := range pkg.Syntax {
 			fname := pkg.Fset.File(file.Pos()).Name()
 			ast.Inspect(file, func(n ast.Node) bool {
-				// Check context cancellation during AST traversal
-				select {
-				case <-ctx.Done():
+				if shouldStop(ctx) {
 					return false
-				default:
 				}
 
 				switch decl := n.(type) {
@@ -121,17 +123,18 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 	FindReferencesOutput,
 	error,
 ) {
-	mode := packages.NeedSyntax | packages.NeedFiles | packages.NeedTypesInfo
+	out := FindReferencesOutput{References: []Reference{}}
+
+	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedTypesInfo
+
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
-		return nil, FindReferencesOutput{}, err
+		return fail(out, err)
 	}
-
-	out := FindReferencesOutput{References: []Reference{}}
 
 	for _, pkg := range pkgs {
 		if ctxCancelled(ctx) {
-			return nil, out, ctx.Err()
+			return fail(out, ctx.Err())
 		}
 
 		for _, file := range pkg.Syntax {
@@ -139,20 +142,14 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 			lines := getFileLines(pkg.Fset, file)
 
 			ast.Inspect(file, func(n ast.Node) bool {
-				// Check context cancellation during AST traversal
-				select {
-				case <-ctx.Done():
+				if shouldStop(ctx) {
 					return false
-				default:
 				}
 
 				if ident, ok := n.(*ast.Ident); ok && ident.Name == input.Ident {
 					pos := pkg.Fset.Position(ident.Pos())
 
-					snip := ""
-					if pos.Line-1 < len(lines) {
-						snip = strings.TrimSpace(lines[pos.Line-1])
-					}
+					snip := extractSnippet(lines, pos.Line)
 
 					out.References = append(out.References, Reference{
 						File:    fname,
@@ -174,17 +171,17 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 	FindDefinitionsOutput,
 	error,
 ) {
-	mode := packages.NeedSyntax | packages.NeedFiles | packages.NeedTypesInfo
+	out := FindDefinitionsOutput{Definitions: []Definition{}}
+	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedTypesInfo
+
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
-		return nil, FindDefinitionsOutput{}, err
+		return fail(out, err)
 	}
-
-	out := FindDefinitionsOutput{Definitions: []Definition{}}
 
 	for _, pkg := range pkgs {
 		if ctxCancelled(ctx) {
-			return nil, out, ctx.Err()
+			return fail(out, ctx.Err())
 		}
 
 		for _, file := range pkg.Syntax {
@@ -192,17 +189,14 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 			lines := getFileLines(pkg.Fset, file)
 
 			ast.Inspect(file, func(n ast.Node) bool {
-				// Check context cancellation during AST traversal
-				select {
-				case <-ctx.Done():
+				if shouldStop(ctx) {
 					return false
-				default:
 				}
 
 				switch decl := n.(type) {
 				case *ast.TypeSpec:
 					if decl.Name.Name == input.Ident {
-						pos := pkg.Fset.Position(decl.Pos())
+						pos := symbolPos(pkg, decl)
 
 						snip := extractSnippet(lines, pos.Line)
 
@@ -214,7 +208,7 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 					}
 				case *ast.FuncDecl:
 					if decl.Name.Name == input.Ident {
-						pos := pkg.Fset.Position(decl.Pos())
+						pos := symbolPos(pkg, decl)
 
 						snip := extractSnippet(lines, pos.Line)
 
@@ -227,12 +221,9 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 				case *ast.ValueSpec:
 					for _, name := range decl.Names {
 						if name.Name == input.Ident {
-							pos := pkg.Fset.Position(decl.Pos())
+							pos := symbolPos(pkg, decl)
 
-							snip := ""
-							if pos.Line-1 < len(lines) {
-								snip = strings.TrimSpace(lines[pos.Line-1])
-							}
+							snip := extractSnippet(lines, pos.Line)
 
 							out.Definitions = append(out.Definitions, Definition{
 								File:    fname,
@@ -290,11 +281,8 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 		changed := false
 
 		ast.Inspect(node, func(n ast.Node) bool {
-			// Check context cancellation during AST traversal
-			select {
-			case <-ctx.Done():
+			if shouldStop(ctx) {
 				return false
-			default:
 			}
 
 			if ident, ok := n.(*ast.Ident); ok {
@@ -308,9 +296,12 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 		})
 
 		if changed {
-			// Write the modified AST to buffer to compare with original
-			var buf bytes.Buffer
-			err = printer.Fprint(&buf, fset, node)
+			buf := bufPool.Get().(*bytes.Buffer)
+
+			buf.Reset()
+			defer bufPool.Put(buf)
+
+			err = printer.Fprint(buf, fset, node)
 			if err != nil {
 				return err
 			}
@@ -320,14 +311,7 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 			// Only write if content actually changed
 			if !bytes.Equal(originalContent, newContent) {
 				out.ChangedFiles = append(out.ChangedFiles, path)
-
-				f, err := os.Create(path)
-				if err != nil {
-					return err
-				}
-				defer f.Close()
-
-				_, err = f.Write(newContent)
+				err := safeWriteFile(path, newContent)
 				if err != nil {
 					return err
 				}
@@ -337,7 +321,7 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 		return nil
 	})
 	if err != nil {
-		return nil, out, err
+		return fail(out, err)
 	}
 
 	return nil, out, nil
@@ -348,7 +332,8 @@ func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImport
 	ListImportsOutput,
 	error,
 ) {
-	mode := packages.NeedSyntax | packages.NeedFiles
+	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles
+
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
 		return nil, ListImportsOutput{}, err
@@ -358,17 +343,14 @@ func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImport
 
 	for _, pkg := range pkgs {
 		if ctxCancelled(ctx) {
-			return nil, out, ctx.Err()
+			return fail(out, ctx.Err())
 		}
 
 		for _, file := range pkg.Syntax {
 			fname := pkg.Fset.File(file.Pos()).Name()
 			for _, imp := range file.Imports {
-				// Check context cancellation during processing
-				select {
-				case <-ctx.Done():
-					return nil, out, ctx.Err()
-				default:
+				if ctxCancelled(ctx) {
+					return fail(out, ctx.Err())
 				}
 
 				path := strings.Trim(imp.Path.Value, `"`)
@@ -392,6 +374,7 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 	error,
 ) {
 	mode := packages.NeedSyntax | packages.NeedFiles
+
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
 		return nil, ListInterfacesOutput{}, err
@@ -407,11 +390,8 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 		for _, file := range pkg.Syntax {
 			fname := pkg.Fset.File(file.Pos()).Name()
 			ast.Inspect(file, func(n ast.Node) bool {
-				// Check context cancellation during AST traversal
-				select {
-				case <-ctx.Done():
+				if shouldStop(ctx) {
 					return false
-				default:
 				}
 
 				ts, ok := n.(*ast.TypeSpec)
@@ -420,7 +400,7 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 				}
 
 				if iface, ok := ts.Type.(*ast.InterfaceType); ok {
-					pos := pkg.Fset.Position(ts.Pos())
+					pos := symbolPos(pkg, ts)
 					ifInfo := InterfaceInfo{
 						Name:    ts.Name.Name,
 						File:    fname,
@@ -439,6 +419,7 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 
 					out.Interfaces = append(out.Interfaces, ifInfo)
 				}
+
 				return true
 			})
 		}
@@ -455,26 +436,21 @@ func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input Anal
 	out := AnalyzeComplexityOutput{Functions: []FunctionComplexity{}}
 
 	fset := token.NewFileSet()
+
 	pkgs, err := parser.ParseDir(fset, input.Dir, nil, parser.ParseComments)
 	if err != nil {
-		return nil, out, err
+		return fail(out, err)
 	}
 
 	for _, pkg := range pkgs {
-		// Check context cancellation between packages
-		select {
-		case <-ctx.Done():
+		if shouldStop(ctx) {
 			return nil, out, ctx.Err()
-		default:
 		}
 
 		for fname, file := range pkg.Files {
 			ast.Inspect(file, func(n ast.Node) bool {
-				// Check context cancellation during AST traversal
-				select {
-				case <-ctx.Done():
+				if shouldStop(ctx) {
 					return false
-				default:
 				}
 
 				fd, ok := n.(*ast.FuncDecl)
@@ -485,39 +461,23 @@ func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input Anal
 				pos := fset.Position(fd.Pos())
 				lines := fset.Position(fd.End()).Line - pos.Line
 
-				// метрики
-				nesting := 0
-				maxNesting := 0
-				cyclomatic := 1 // минимум = 1
-
-				ast.Inspect(fd.Body, func(n ast.Node) bool {
-					// Check context cancellation during inner AST traversal
-					select {
-					case <-ctx.Done():
-						return false
-					default:
-					}
-
-					switch n.(type) {
-					case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
-						nesting++
-						if nesting > maxNesting {
-							maxNesting = nesting
-						}
-						cyclomatic++
-					case *ast.CaseClause:
-						cyclomatic++
-					}
-					return true
-				})
+				// запускаем visitor
+				visitor := &ComplexityVisitor{
+					Ctx:        ctx,
+					Fset:       fset,
+					Nesting:    0,
+					MaxNesting: 0,
+					Cyclomatic: 1, // минимум = 1
+				}
+				ast.Walk(visitor, fd.Body)
 
 				out.Functions = append(out.Functions, FunctionComplexity{
 					Name:       fd.Name.Name,
 					File:       fname,
 					Line:       pos.Line,
 					Lines:      lines,
-					Nesting:    maxNesting,
-					Cyclomatic: cyclomatic,
+					Nesting:    visitor.MaxNesting,
+					Cyclomatic: visitor.Cyclomatic,
 				})
 
 				return true
@@ -528,6 +488,52 @@ func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input Anal
 	return nil, out, nil
 }
 
+type ComplexityVisitor struct {
+	Ctx        context.Context
+	Fset       *token.FileSet
+	Nesting    int
+	MaxNesting int
+	Cyclomatic int
+}
+
+func (v *ComplexityVisitor) Visit(n ast.Node) ast.Visitor {
+	if shouldStop(v.Ctx) {
+		return nil
+	}
+
+	switch n.(type) {
+	case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt,
+		*ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+		v.Nesting++
+		if v.Nesting > v.MaxNesting {
+			v.MaxNesting = v.Nesting
+		}
+
+		v.Cyclomatic++
+		// возвращаем «scoped visitor», который после обхода уменьшит nesting
+		return &scopedVisitor{v}
+	case *ast.CaseClause:
+		v.Cyclomatic++
+	}
+
+	return v
+}
+
+type scopedVisitor struct {
+	parent *ComplexityVisitor
+}
+
+func (s *scopedVisitor) Visit(n ast.Node) ast.Visitor {
+	if n == nil {
+		// выход из поддерева — уменьшаем nesting
+		s.parent.Nesting--
+
+		return nil
+	}
+
+	return s.parent.Visit(n)
+}
+
 func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput) (
 	*mcp.CallToolResult,
 	DeadCodeOutput,
@@ -536,62 +542,48 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 	out := DeadCodeOutput{Unused: []DeadSymbol{}}
 
 	cfg := &packages.Config{
-		Mode:    packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedFiles,
+		Mode:    packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedCompiledGoFiles,
 		Dir:     input.Dir,
 		Context: ctx,
 	}
+
 	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
-		return nil, out, err
+		return fail(out, err)
 	}
 
 	for _, pkg := range pkgs {
-		if ctxCancelled(ctx) {
-			return nil, out, ctx.Err()
+		if shouldStop(ctx) {
+			return fail(out, ctx.Err())
 		}
 
-		used := map[types.Object]bool{}
-
-		// Все использования
+		// собираем все использования
+		used := make(map[types.Object]struct{}, len(pkg.TypesInfo.Uses))
 		for _, obj := range pkg.TypesInfo.Uses {
 			if obj != nil {
-				used[obj] = true
+				used[obj] = struct{}{}
 			}
 		}
 
-		// Проверяем определения
+		// проверяем определения
 		for ident, obj := range pkg.TypesInfo.Defs {
-			// Check context cancellation during processing
-			select {
-			case <-ctx.Done():
-				return nil, out, ctx.Err()
-			default:
+			if shouldStop(ctx) {
+				return fail(out, ctx.Err())
 			}
 
 			if obj == nil {
 				continue
 			}
-
-			// Пропускаем экспортируемые символы (начинаются с заглавной буквы)
+			// пропускаем экспортируемые символы
 			if ast.IsExported(ident.Name) {
 				continue
 			}
 
 			if _, ok := used[obj]; !ok {
 				pos := pkg.Fset.Position(ident.Pos())
-				kind := "var"
-				switch obj.(type) {
-				case *types.Func:
-					kind = "func"
-				case *types.TypeName:
-					kind = "type"
-				case *types.Const:
-					kind = "const"
-				}
-
 				out.Unused = append(out.Unused, DeadSymbol{
 					Name: ident.Name,
-					Kind: kind,
+					Kind: kindOf(obj),
 					File: pos.Filename,
 					Line: pos.Line,
 				})
@@ -600,4 +592,39 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 	}
 
 	return nil, out, nil
+}
+
+func kindOf(obj types.Object) string {
+	switch obj.(type) {
+	case *types.Func:
+		return "func"
+	case *types.TypeName:
+		return "type"
+	case *types.Const:
+		return "const"
+	default:
+		return "var"
+	}
+}
+
+func shouldStop(ctx context.Context) bool {
+	return ctx.Err() != nil
+}
+
+func fail[T any](out T, err error) (*mcp.CallToolResult, T, error) {
+	return nil, out, err
+}
+
+func symbolPos(pkg *packages.Package, n ast.Node) token.Position {
+	return pkg.Fset.Position(n.Pos())
+}
+
+func safeWriteFile(path string, data []byte) error {
+	tmp := path + ".tmp"
+	err := os.WriteFile(tmp, data, 0o644)
+	if err != nil {
+		return err
+	}
+
+	return os.Rename(tmp, path)
 }

@@ -2,10 +2,10 @@ package tools
 
 import (
 	"context"
-	"fmt"
 	"go/ast"
 	"go/token"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -14,12 +14,14 @@ import (
 
 var packageCache = struct {
 	sync.RWMutex
+
 	pkgs map[string][]*packages.Package
 }{pkgs: make(map[string][]*packages.Package)}
 
 // loadPackagesWithCache loads packages with directory and mode-based caching.
 func loadPackagesWithCache(ctx context.Context, dir string, mode packages.LoadMode) ([]*packages.Package, error) {
-	cacheKey := dir + "|" + fmt.Sprintf("%d", int64(mode))
+	cacheKey := dir + "|" + strconv.FormatInt(int64(mode), 10)
+
 	packageCache.RLock()
 	cachedPkgs, exists := packageCache.pkgs[cacheKey]
 	packageCache.RUnlock()
@@ -49,6 +51,7 @@ func loadPackagesWithCache(ctx context.Context, dir string, mode packages.LoadMo
 
 var fileLinesCache = struct {
 	sync.RWMutex
+
 	data map[string][]string
 }{
 	data: make(map[string][]string),
@@ -61,6 +64,7 @@ func getFileLines(fset *token.FileSet, file *ast.File) []string {
 	fileLinesCache.RLock()
 	lines, ok := fileLinesCache.data[filename]
 	fileLinesCache.RUnlock()
+
 	if ok {
 		return lines
 	}
@@ -70,6 +74,7 @@ func getFileLines(fset *token.FileSet, file *ast.File) []string {
 	if err != nil {
 		return []string{}
 	}
+
 	lines = strings.Split(string(src), "\n")
 
 	// cache it

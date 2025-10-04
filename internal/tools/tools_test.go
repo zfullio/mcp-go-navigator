@@ -2,15 +2,17 @@ package tools_test
 
 import (
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
-	"go-navigator/internal/tools"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go-navigator/internal/tools"
 )
 
 func TestListPackages(t *testing.T) {
@@ -200,10 +202,12 @@ func TestListImports(t *testing.T) {
 
 	foundFmt := false
 	foundStrings := false
+
 	for _, imp := range out.Imports {
 		if imp.Path == "fmt" {
 			foundFmt = true
 		}
+
 		if imp.Path == "strings" {
 			foundStrings = true
 		}
@@ -233,10 +237,12 @@ func TestListInterfaces(t *testing.T) {
 	for _, iface := range out.Interfaces {
 		if iface.Name == "Storage" {
 			foundStorage = true
+
 			for _, m := range iface.Methods {
 				if m.Name == "Save" {
 					foundSave = true
 				}
+
 				if m.Name == "Load" {
 					foundLoad = true
 				}
@@ -247,9 +253,11 @@ func TestListInterfaces(t *testing.T) {
 	if !foundStorage {
 		t.Errorf("expected to find interface Storage, got %+v", out.Interfaces)
 	}
+
 	if !foundSave {
 		t.Errorf("expected to find method Save in Storage, got %+v", out.Interfaces)
 	}
+
 	if !foundLoad {
 		t.Errorf("expected to find method Load in Storage, got %+v", out.Interfaces)
 	}
@@ -289,6 +297,7 @@ func TestAnalyzeComplexity(t *testing.T) {
 		if f.Cyclomatic < 2 {
 			t.Errorf("expected WithIf cyclomatic>=2, got %d", f.Cyclomatic)
 		}
+
 		if f.Nesting < 1 {
 			t.Errorf("expected WithIf nesting>=1, got %d", f.Nesting)
 		}
@@ -301,6 +310,7 @@ func TestAnalyzeComplexity(t *testing.T) {
 		if f.Cyclomatic < 3 {
 			t.Errorf("expected WithLoopAndSwitch cyclomatic>=3, got %d", f.Cyclomatic)
 		}
+
 		if f.Nesting < 2 {
 			t.Errorf("expected WithLoopAndSwitch nesting>=2, got %d", f.Nesting)
 		}
@@ -397,6 +407,139 @@ func TestDeadCode_AllKinds(t *testing.T) {
 	}
 }
 
+func BenchmarkFindReferences(b *testing.B) {
+	in := tools.FindReferencesInput{
+		Dir:   benchDir(),
+		Ident: "Foo",
+	}
+
+	for range b.N {
+		_, _, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
+		if err != nil {
+			b.Fatalf("FindReferences error: %v", err)
+		}
+	}
+}
+
+func BenchmarkFindDefinitions(b *testing.B) {
+	in := tools.FindDefinitionsInput{
+		Dir:   benchDir(),
+		Ident: "Foo",
+	}
+
+	for range b.N {
+		_, _, err := tools.FindDefinitions(context.Background(), &mcp.CallToolRequest{}, in)
+		if err != nil {
+			b.Fatalf("FindDefinitions error: %v", err)
+		}
+	}
+}
+
+func BenchmarkListSymbols(b *testing.B) {
+	in := tools.ListSymbolsInput{
+		Dir:     benchDir(),
+		Package: "./...",
+	}
+
+	for range b.N {
+		_, _, err := tools.ListSymbols(context.Background(), &mcp.CallToolRequest{}, in)
+		if err != nil {
+			b.Fatalf("ListSymbols error: %v", err)
+		}
+	}
+}
+
+func BenchmarkRenameSymbol(b *testing.B) {
+	// исходная директория для тестов
+	srcDir := benchDir() // твоя функция, которая отдаёт каталог с тестовым кодом
+
+	for range b.N {
+		// копируем каталог в tmp, чтобы каждый прогон был на «чистом» коде
+		tmpDir := b.TempDir()
+		copyDir(srcDir, tmpDir)
+
+		in := tools.RenameSymbolInput{
+			Dir:     tmpDir,
+			OldName: "Foo",
+			NewName: "Bar",
+		}
+
+		_, _, err := tools.RenameSymbol(context.Background(), &mcp.CallToolRequest{}, in)
+		if err != nil {
+			b.Fatalf("RenameSymbol error: %v", err)
+		}
+	}
+}
+
+func BenchmarkAnalyzeComplexity(b *testing.B) {
+	in := tools.AnalyzeComplexityInput{
+		Dir: benchDir(), // твоя тестовая директория
+	}
+
+	for range b.N {
+		_, _, err := tools.AnalyzeComplexity(context.Background(), &mcp.CallToolRequest{}, in)
+		if err != nil {
+			b.Fatalf("AnalyzeComplexity error: %v", err)
+		}
+	}
+}
+
+func BenchmarkComplexityVisitor(b *testing.B) {
+	// Берём один конкретный файл, чтобы измерять только визитор
+	dir := benchDir()
+	fset := token.NewFileSet()
+	file := filepath.Join(dir, "complex.go") // возьми тестовый файл с функциями
+
+	node, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
+	if err != nil {
+		b.Fatalf("parse error: %v", err)
+	}
+
+	// ищем первую функцию
+	var fn *ast.FuncDecl
+	ast.Inspect(node, func(n ast.Node) bool {
+		if f, ok := n.(*ast.FuncDecl); ok {
+			fn = f
+
+			return false
+		}
+
+		return true
+	})
+
+	if fn == nil {
+		b.Fatal("no function found in example.go")
+	}
+
+	b.ResetTimer()
+
+	for range b.N {
+		visitor := &tools.ComplexityVisitor{
+			Ctx:        context.Background(),
+			Fset:       fset,
+			Nesting:    0,
+			MaxNesting: 0,
+			Cyclomatic: 1,
+		}
+		ast.Walk(visitor, fn.Body)
+		_ = visitor.MaxNesting
+		_ = visitor.Cyclomatic
+	}
+}
+
+func BenchmarkDeadCode(b *testing.B) {
+	in := tools.DeadCodeInput{
+		Dir: benchDir(), // твоя тестовая директория
+	}
+
+	for range b.N {
+		_, _, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
+		if err != nil {
+			b.Fatalf("DeadCode error: %v", err)
+		}
+	}
+}
+
 func copyDir(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -432,49 +575,4 @@ func benchDir() string {
 	_, filename, _, _ := runtime.Caller(0)
 	// укажем testdata/sample как тестовый проект
 	return filepath.Join(filepath.Dir(filename), "testdata", "sample")
-}
-
-// BenchmarkFindReferences — измеряет скорость поиска ссылок
-func BenchmarkFindReferences(b *testing.B) {
-	in := tools.FindReferencesInput{
-		Dir:   benchDir(),
-		Ident: "Foo",
-	}
-
-	for i := 0; i < b.N; i++ {
-		_, _, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
-		if err != nil {
-			b.Fatalf("FindReferences error: %v", err)
-		}
-	}
-}
-
-// BenchmarkFindDefinitions — измеряет скорость поиска определений
-func BenchmarkFindDefinitions(b *testing.B) {
-	in := tools.FindDefinitionsInput{
-		Dir:   benchDir(),
-		Ident: "Foo",
-	}
-
-	for i := 0; i < b.N; i++ {
-		_, _, err := tools.FindDefinitions(context.Background(), &mcp.CallToolRequest{}, in)
-		if err != nil {
-			b.Fatalf("FindDefinitions error: %v", err)
-		}
-	}
-}
-
-// BenchmarkListSymbols — измеряет скорость обхода символов
-func BenchmarkListSymbols(b *testing.B) {
-	in := tools.ListSymbolsInput{
-		Dir:     benchDir(),
-		Package: "./...",
-	}
-
-	for i := 0; i < b.N; i++ {
-		_, _, err := tools.ListSymbols(context.Background(), &mcp.CallToolRequest{}, in)
-		if err != nil {
-			b.Fatalf("ListSymbols error: %v", err)
-		}
-	}
 }
