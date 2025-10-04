@@ -248,7 +248,11 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 	RenameSymbolOutput,
 	error,
 ) {
-	out := RenameSymbolOutput{}
+	out := RenameSymbolOutput{
+		ChangedFiles: []string{},
+		Diffs:        []FileDiff{},
+		Collisions:   []string{},
+	}
 
 	if input.OldName == input.NewName {
 		out.Collisions = append(out.Collisions,
