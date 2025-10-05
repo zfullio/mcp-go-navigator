@@ -160,6 +160,7 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 	defer func() { logEnd("FindReferences", start, len(out.References)) }()
 
 	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedTypes | packages.NeedTypesInfo
+
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
 		return fail(out, err)
@@ -198,12 +199,14 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 				if pos.Filename == "" {
 					return true
 				}
+
 				if input.File != "" && !strings.HasSuffix(pos.Filename, input.File) {
 					return true
 				}
 
 				snip := extractSnippet(lines, pos.Line)
 				appendReference(&out.References, input.Dir, pkg.Fset, absPath, pos.Line, snip)
+
 				return true
 			})
 		}
@@ -225,6 +228,7 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 	defer func() { logEnd("FindDefinitions", start, len(out.Definitions)) }()
 
 	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedTypes | packages.NeedTypesInfo
+
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
 		return fail(out, err)
@@ -276,6 +280,7 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 
 	// Find the target object to rename
 	var targetObj types.Object
+
 	for _, pkg := range pkgs {
 		if shouldStop(ctx) {
 			return fail(out, context.Canceled)
@@ -286,6 +291,7 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 		if scope != nil {
 			if obj := scope.Lookup(input.OldName); obj != nil {
 				targetObj = obj
+
 				break
 			}
 		}
@@ -295,6 +301,7 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 			if def != nil && def.Name() == input.OldName {
 				if input.Kind == "" || objStringKind(def) == input.Kind {
 					targetObj = def
+
 					break
 				}
 			}
@@ -1142,130 +1149,4 @@ func (v *ASTRewriteVisitor) Rewrite(node ast.Node) ast.Node {
 
 		return true
 	}, nil)
-}
-
-// astEqual compares two AST expressions structurally.
-func astEqual(a, b ast.Expr) bool {
-	if a == nil && b == nil {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-
-	// Use the ast.Inspect function to walk both ASTs simultaneously for deep comparison
-	// This is more efficient than formatting to strings
-	return compareASTNodes(a, b)
-}
-
-// compareASTNodes compares two AST nodes recursively
-func compareASTNodes(a, b ast.Node) bool {
-	if a == nil && b == nil {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-
-	// Use type switches to compare the specific node types
-	switch aVal := a.(type) {
-	case *ast.Ident:
-		if bVal, ok := b.(*ast.Ident); ok {
-			return aVal.Name == bVal.Name
-		}
-	case *ast.BasicLit:
-		if bVal, ok := b.(*ast.BasicLit); ok {
-			return aVal.Kind == bVal.Kind && aVal.Value == bVal.Value
-		}
-	case *ast.BinaryExpr:
-		if bVal, ok := b.(*ast.BinaryExpr); ok {
-			return aVal.Op == bVal.Op &&
-				compareASTNodes(aVal.X, bVal.X) &&
-				compareASTNodes(aVal.Y, bVal.Y)
-		}
-	case *ast.CallExpr:
-		if bVal, ok := b.(*ast.CallExpr); ok {
-			return compareASTNodes(aVal.Fun, bVal.Fun) &&
-				compareExprSlices(aVal.Args, bVal.Args)
-		}
-	case *ast.SelectorExpr:
-		if bVal, ok := b.(*ast.SelectorExpr); ok {
-			return compareASTNodes(aVal.X, bVal.X) &&
-				compareASTNodes(aVal.Sel, bVal.Sel)
-		}
-	case *ast.ParenExpr:
-		if bVal, ok := b.(*ast.ParenExpr); ok {
-			return compareASTNodes(aVal.X, bVal.X)
-		}
-	case *ast.StarExpr:
-		if bVal, ok := b.(*ast.StarExpr); ok {
-			return compareASTNodes(aVal.X, bVal.X)
-		}
-	case *ast.TypeAssertExpr:
-		if bVal, ok := b.(*ast.TypeAssertExpr); ok {
-			return compareASTNodes(aVal.X, bVal.X) &&
-				compareASTNodes(aVal.Type, bVal.Type)
-		}
-	case *ast.IndexExpr:
-		if bVal, ok := b.(*ast.IndexExpr); ok {
-			return compareASTNodes(aVal.X, bVal.X) &&
-				compareASTNodes(aVal.Index, bVal.Index)
-		}
-	case *ast.SliceExpr:
-		if bVal, ok := b.(*ast.SliceExpr); ok {
-			return compareASTNodes(aVal.X, bVal.X) &&
-				compareASTNodes(aVal.Low, bVal.Low) &&
-				compareASTNodes(aVal.High, bVal.High) &&
-				compareASTNodes(aVal.Max, bVal.Max)
-		}
-	case *ast.FuncLit:
-		if bVal, ok := b.(*ast.FuncLit); ok {
-			// For FuncLit, we'll do a basic comparison of type and body since
-			// comparing functions properly is complex
-			return compareASTNodes(aVal.Type, bVal.Type) &&
-				compareASTNodes(aVal.Body, bVal.Body)
-		}
-	case *ast.CompositeLit:
-		if bVal, ok := b.(*ast.CompositeLit); ok {
-			return compareASTNodes(aVal.Type, bVal.Type) &&
-				compareExprSlices(aVal.Elts, bVal.Elts)
-		}
-	case *ast.KeyValueExpr:
-		if bVal, ok := b.(*ast.KeyValueExpr); ok {
-			return compareASTNodes(aVal.Key, bVal.Key) &&
-				compareASTNodes(aVal.Value, bVal.Value)
-		}
-	case *ast.UnaryExpr:
-		if bVal, ok := b.(*ast.UnaryExpr); ok {
-			return aVal.Op == bVal.Op &&
-				compareASTNodes(aVal.X, bVal.X)
-		}
-	// Add other cases as needed for more comprehensive comparison
-	// For this implementation, if it's not one of the known types,
-	// we'll fall back to a string comparison approach which is less efficient
-	// but covers all cases
-	default:
-		var bufA, bufB bytes.Buffer
-		fset := token.NewFileSet()
-		_ = format.Node(&bufA, fset, a)
-		_ = format.Node(&bufB, fset, b)
-		return bufA.String() == bufB.String()
-	}
-
-	return false
-}
-
-// compareExprSlices compares two slices of expressions
-func compareExprSlices(a, b []ast.Expr) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	for i := range a {
-		if !compareASTNodes(a[i], b[i]) {
-			return false
-		}
-	}
-
-	return true
 }

@@ -11,9 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"go-navigator/internal/tools"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go-navigator/internal/tools"
 )
 
 func TestListPackages(t *testing.T) {
@@ -1109,6 +1108,7 @@ func TestRenameSymbol_DryRun(t *testing.T) {
 
 	// First, verify the original file content
 	originalFilePath := filepath.Join(tmpDir, "foo.go")
+
 	originalContent, err := os.ReadFile(originalFilePath)
 	if err != nil {
 		t.Fatalf("failed to read original file: %v", err)
@@ -1168,6 +1168,7 @@ func TestFindDefinitions_WithFileFilter(t *testing.T) {
 
 	// Also test with non-matching file filter
 	in.File = "nonexistent.go"
+
 	_, out2, err := tools.FindDefinitions(context.Background(), &mcp.CallToolRequest{}, in)
 	if err != nil {
 		t.Fatalf("FindDefinitions error with non-existent file: %v", err)
@@ -1199,6 +1200,7 @@ func TestFindReferences_WithFileFilter(t *testing.T) {
 
 	// Also test with non-matching file filter
 	in.File = "nonexistent.go"
+
 	_, out2, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
 	if err != nil {
 		t.Fatalf("FindReferences error with non-existent file: %v", err)
