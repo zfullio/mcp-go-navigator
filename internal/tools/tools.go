@@ -168,23 +168,36 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 		return fail(out, err)
 	}
 
+	// Find the target object to find references for
 	var targetObj types.Object
 
 	for _, pkg := range pkgs {
+		if shouldStop(ctx) {
+			return fail(out, context.Canceled)
+		}
+
+		// First check the package scope
 		scope := pkg.Types.Scope()
 		if scope != nil {
 			if obj := scope.Lookup(input.Ident); obj != nil {
-				targetObj = obj
-
-				break
+				if input.Kind == "" || objStringKind(obj) == input.Kind {
+					targetObj = obj
+					break
+				}
 			}
 		}
 
-		for _, def := range pkg.TypesInfo.Defs {
-			if def != nil && def.Name() == input.Ident {
-				targetObj = def
+		// Then check all definitions
+		for ident, def := range pkg.TypesInfo.Defs {
+			if shouldStop(ctx) {
+				return fail(out, context.Canceled)
+			}
 
-				break
+			if def != nil && ident.Name == input.Ident {
+				if input.Kind == "" || objStringKind(def) == input.Kind {
+					targetObj = def
+					break
+				}
 			}
 		}
 
@@ -193,13 +206,29 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 		}
 	}
 
+	if targetObj == nil {
+		return nil, out, fmt.Errorf("symbol %q not found", input.Ident)
+	}
+
 	for _, pkg := range pkgs {
+		if shouldStop(ctx) {
+			return fail(out, context.Canceled)
+		}
+
 		for _, file := range pkg.Syntax {
+			if shouldStop(ctx) {
+				return fail(out, context.Canceled)
+			}
+
 			absPath := pkg.Fset.File(file.Pos()).Name()
 			relPath, _ := filepath.Rel(input.Dir, absPath)
 			lines := getFileLines(pkg.Fset, file)
 
 			ast.Inspect(file, func(n ast.Node) bool {
+				if shouldStop(ctx) {
+					return false
+				}
+
 				ident, ok := n.(*ast.Ident)
 				if !ok || ident.Name != input.Ident {
 					return true
@@ -210,16 +239,23 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 					return true
 				}
 
+				// Check if the object kind matches if specified
 				if input.Kind != "" && input.Kind != objStringKind(obj) {
 					return true
 				}
 
-				if targetObj != nil && !sameObject(obj, targetObj) {
+				// Check if this reference is for our target object
+				if !sameObject(obj, targetObj) {
 					return true
 				}
 
 				pos := pkg.Fset.Position(ident.Pos())
 				if pos.Filename == "" {
+					return true
+				}
+
+				// Check if we need to filter by file
+				if input.File != "" && !strings.HasSuffix(pos.Filename, input.File) {
 					return true
 				}
 
@@ -258,37 +294,57 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 	}
 
 	for _, pkg := range pkgs {
-		scope := pkg.Types.Scope()
-		if scope == nil {
-			continue
+		if shouldStop(ctx) {
+			return fail(out, context.Canceled)
 		}
 
-		obj := scope.Lookup(input.Ident)
-		if obj == nil {
-			for _, name := range pkg.TypesInfo.Defs {
-				if name != nil && name.Name() == input.Ident {
-					obj = name
-
-					break
+		// First check the package scope
+		scope := pkg.Types.Scope()
+		if scope != nil {
+			obj := scope.Lookup(input.Ident)
+			if obj != nil {
+				// Check if the object kind matches if specified
+				if input.Kind == "" || objStringKind(obj) == input.Kind {
+					pos := pkg.Fset.Position(obj.Pos())
+					if pos.Filename != "" {
+						// Check if we need to filter by file
+						if input.File == "" || strings.HasSuffix(pos.Filename, input.File) {
+							rel, _ := filepath.Rel(input.Dir, pos.Filename)
+							lines := getFileLinesFromPath(pos.Filename)
+							snippet := extractSnippet(lines, pos.Line)
+							out.Definitions = append(out.Definitions, Definition{
+								File: rel, Line: pos.Line, Snippet: snippet,
+							})
+						}
+					}
 				}
 			}
 		}
 
-		if obj == nil {
-			continue
-		}
+		// Then check all definitions in the package
+		for ident, obj := range pkg.TypesInfo.Defs {
+			if shouldStop(ctx) {
+				return fail(out, context.Canceled)
+			}
 
-		pos := pkg.Fset.Position(obj.Pos())
-		if pos.Filename == "" {
-			continue
+			if obj != nil && ident.Name == input.Ident {
+				// Check if the object kind matches if specified
+				if input.Kind == "" || objStringKind(obj) == input.Kind {
+					pos := pkg.Fset.Position(obj.Pos())
+					if pos.Filename != "" {
+						// Check if we need to filter by file
+						if input.File == "" || strings.HasSuffix(pos.Filename, input.File) {
+							rel, _ := filepath.Rel(input.Dir, pos.Filename)
+							lines := getFileLinesFromPath(pos.Filename)
+							snippet := extractSnippet(lines, pos.Line)
+							out.Definitions = append(out.Definitions, Definition{
+								File: rel, Line: pos.Line, Snippet: snippet,
+							})
+						}
+					}
+				}
+			}
 		}
-
-		rel, _ := filepath.Rel(input.Dir, pos.Filename)
-		lines := getFileLinesFromPath(pos.Filename)
-		snippet := extractSnippet(lines, pos.Line)
-		out.Definitions = append(out.Definitions, Definition{
-			File: rel, Line: pos.Line, Snippet: snippet,
-		})
 	}
 
 	return nil, out, nil
@@ -325,28 +381,68 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 		return fail(out, err)
 	}
 
+	// Find the target object to rename
+	var targetObj types.Object
 	for _, pkg := range pkgs {
+		if shouldStop(ctx) {
+			return fail(out, context.Canceled)
+		}
+
+		// Look in scope first
+		scope := pkg.Types.Scope()
+		if scope != nil {
+			if obj := scope.Lookup(input.OldName); obj != nil {
+				targetObj = obj
+				break
+			}
+		}
+
+		// Then look in defs
+		for _, def := range pkg.TypesInfo.Defs {
+			if def != nil && def.Name() == input.OldName {
+				if input.Kind == "" || objStringKind(def) == input.Kind {
+					targetObj = def
+					break
+				}
+			}
+		}
+
+		if targetObj != nil {
+			break
+		}
+	}
+
+	if targetObj == nil {
+		return nil, out, fmt.Errorf("symbol %q not found", input.OldName)
+	}
+
+	for _, pkg := range pkgs {
+		if shouldStop(ctx) {
+			return fail(out, context.Canceled)
+		}
+
 		for i, file := range pkg.Syntax {
+			if shouldStop(ctx) {
+				return fail(out, context.Canceled)
+			}
+
 			filename := pkg.CompiledGoFiles[i]
 			origBytes, _ := os.ReadFile(filename)
 			changed := false
 
 			ast.Inspect(file, func(n ast.Node) bool {
-				switch decl := n.(type) {
-				case *ast.FuncDecl:
-					if decl.Name.Name == input.OldName {
-						decl.Name.Name = input.NewName
-						changed = true
-					}
-				case *ast.TypeSpec:
-					if decl.Name.Name == input.OldName {
-						decl.Name.Name = input.NewName
-						changed = true
-					}
-				case *ast.Ident:
-					if decl.Name == input.OldName {
-						decl.Name = input.NewName
-						changed = true
+				if shouldStop(ctx) {
+					return false
+				}
+
+				// Only rename identifiers that refer to our target object
+				if ident, ok := n.(*ast.Ident); ok {
+					if ident.Name == input.OldName {
+						obj := pkg.TypesInfo.ObjectOf(ident)
+						if obj != nil && sameObject(obj, targetObj) {
+							ident.Name = input.NewName
+							changed = true
+						}
 					}
 				}
 

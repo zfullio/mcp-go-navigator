@@ -10,27 +10,40 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/go/packages"
 )
 
+// PackageCacheItem represents a cached package with its timestamp
+type PackageCacheItem struct {
+	Packages   []*packages.Package
+	LastAccess time.Time
+}
+
 var packageCache = struct {
 	sync.RWMutex
 
-	pkgs map[string][]*packages.Package
-}{pkgs: make(map[string][]*packages.Package)}
+	pkgs map[string]PackageCacheItem
+}{pkgs: make(map[string]PackageCacheItem)}
 
 // loadPackagesWithCache loads packages with directory and mode-based caching.
 func loadPackagesWithCache(ctx context.Context, dir string, mode packages.LoadMode) ([]*packages.Package, error) {
 	cacheKey := dir + "|" + strconv.FormatInt(int64(mode), 10)
 
 	packageCache.RLock()
-	cachedPkgs, exists := packageCache.pkgs[cacheKey]
+	item, exists := packageCache.pkgs[cacheKey]
 	packageCache.RUnlock()
 
 	if exists {
-		return cachedPkgs, nil
+		// Update last access time
+		packageCache.Lock()
+		item.LastAccess = time.Now()
+		packageCache.pkgs[cacheKey] = item
+		packageCache.Unlock()
+
+		return item.Packages, nil
 	}
 
 	cfg := &packages.Config{
@@ -44,20 +57,29 @@ func loadPackagesWithCache(ctx context.Context, dir string, mode packages.LoadMo
 		return nil, err
 	}
 
-	// Cache the packages
+	// Cache the packages with access time
 	packageCache.Lock()
-	packageCache.pkgs[cacheKey] = pkgs
+	packageCache.pkgs[cacheKey] = PackageCacheItem{
+		Packages:   pkgs,
+		LastAccess: time.Now(),
+	}
 	packageCache.Unlock()
 
 	return pkgs, nil
 }
 
+// FileLinesCacheItem represents a cached file lines entry with timestamp
+type FileLinesCacheItem struct {
+	Lines      []string
+	LastAccess time.Time
+}
+
 var fileLinesCache = struct {
 	sync.RWMutex
 
-	data map[string][]string
+	data map[string]FileLinesCacheItem
 }{
-	data: make(map[string][]string),
+	data: make(map[string]FileLinesCacheItem),
 }
 
 func getFileLines(fset *token.FileSet, file *ast.File) []string {
@@ -65,11 +87,17 @@ func getFileLines(fset *token.FileSet, file *ast.File) []string {
 
 	// check cache
 	fileLinesCache.RLock()
-	lines, ok := fileLinesCache.data[filename]
+	item, ok := fileLinesCache.data[filename]
 	fileLinesCache.RUnlock()
 
 	if ok {
-		return lines
+		// Update last access time
+		fileLinesCache.Lock()
+		item.LastAccess = time.Now()
+		fileLinesCache.data[filename] = item
+		fileLinesCache.Unlock()
+
+		return item.Lines
 	}
 
 	// load file
@@ -78,11 +106,14 @@ func getFileLines(fset *token.FileSet, file *ast.File) []string {
 		return []string{}
 	}
 
-	lines = strings.Split(string(src), "\n")
+	lines := strings.Split(string(src), "\n")
 
-	// cache it
+	// cache it with access time
 	fileLinesCache.Lock()
-	fileLinesCache.data[filename] = lines
+	fileLinesCache.data[filename] = FileLinesCacheItem{
+		Lines:      lines,
+		LastAccess: time.Now(),
+	}
 	fileLinesCache.Unlock()
 
 	return lines
@@ -253,4 +284,63 @@ func interfaceExtends(impl, target *types.Interface) bool {
 	}
 
 	return true
+}
+
+// cleanupCache removes cache entries older than the specified duration
+func cleanupCache(maxAge time.Duration) {
+	packageCache.Lock()
+	defer packageCache.Unlock()
+
+	now := time.Now()
+	for key, item := range packageCache.pkgs {
+		if now.Sub(item.LastAccess) > maxAge {
+			delete(packageCache.pkgs, key)
+		}
+	}
+}
+
+// startCacheCleanup starts a background goroutine that periodically cleans up old cache entries
+func startCacheCleanup(interval time.Duration, maxAge time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			cleanupCache(maxAge)
+		}
+	}()
+}
+
+// FileLinesCacheCleanup removes old file lines cache entries
+func cleanupFileLinesCache(maxAge time.Duration) {
+	fileLinesCache.Lock()
+	defer fileLinesCache.Unlock()
+
+	now := time.Now()
+	for key, item := range fileLinesCache.data {
+		if now.Sub(item.LastAccess) > maxAge {
+			delete(fileLinesCache.data, key)
+		}
+	}
+}
+
+// startFileLinesCacheCleanup starts a background goroutine that periodically cleans up old file lines cache entries
+func startFileLinesCacheCleanup(interval time.Duration, maxAge time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			cleanupFileLinesCache(maxAge)
+		}
+	}()
+}
+
+// init initializes the cache cleanup processes
+func init() {
+	// Clean up package cache entries older than 30 minutes every 10 minutes
+	startCacheCleanup(10*time.Minute, 30*time.Minute)
+
+	// Clean up file lines cache entries older than 30 minutes every 10 minutes
+	startFileLinesCacheCleanup(10*time.Minute, 30*time.Minute)
 }
