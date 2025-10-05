@@ -8,6 +8,7 @@ import (
 	"go/printer"
 	"go/token"
 	"go/types"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -129,6 +130,10 @@ func shouldStop(ctx context.Context) bool {
 }
 
 func fail[T any](out T, err error) (*mcp.CallToolResult, T, error) {
+	if err != nil {
+		log.Printf("[go-navigator] error: %v", err)
+	}
+
 	return nil, out, err
 }
 

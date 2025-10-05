@@ -5,11 +5,11 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/printer"
 	"go/token"
 	"go/types"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -65,7 +65,14 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 		}
 
 		for _, file := range pkg.Syntax {
-			fname := pkg.Fset.File(file.Pos()).Name()
+			absPath := pkg.Fset.File(file.Pos()).Name()
+
+			relPath, err := filepath.Rel(input.Dir, absPath)
+			if err != nil {
+				// fallback: оставить абсолютный путь или обработать по-другому
+				relPath = absPath
+			}
+
 			ast.Inspect(file, func(n ast.Node) bool {
 				if shouldStop(ctx) {
 					return false
@@ -76,7 +83,7 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 					out.Symbols = append(out.Symbols, Symbol{
 						Kind: "func",
 						Name: decl.Name.Name,
-						File: fname,
+						File: relPath,
 						Line: pkg.Fset.Position(decl.Pos()).Line,
 					})
 				case *ast.TypeSpec:
@@ -85,14 +92,14 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 						out.Symbols = append(out.Symbols, Symbol{
 							Kind: "struct",
 							Name: decl.Name.Name,
-							File: fname,
+							File: relPath,
 							Line: pkg.Fset.Position(decl.Pos()).Line,
 						})
 					case *ast.InterfaceType:
 						out.Symbols = append(out.Symbols, Symbol{
 							Kind: "interface",
 							Name: decl.Name.Name,
-							File: fname,
+							File: relPath,
 							Line: pkg.Fset.Position(decl.Pos()).Line,
 						})
 						// можно дополнительно перечислять методы интерфейса:
@@ -101,7 +108,7 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 								out.Symbols = append(out.Symbols, Symbol{
 									Kind: "method",
 									Name: decl.Name.Name + "." + m.Names[0].Name,
-									File: fname,
+									File: relPath,
 									Line: pkg.Fset.Position(m.Pos()).Line,
 								})
 							}
@@ -139,7 +146,14 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 		}
 
 		for _, file := range pkg.Syntax {
-			fname := pkg.Fset.File(file.Pos()).Name()
+			absPath := pkg.Fset.File(file.Pos()).Name()
+
+			relPath, err := filepath.Rel(input.Dir, absPath)
+			if err != nil {
+				// fallback: оставить абсолютный путь или обработать по-другому
+				relPath = absPath
+			}
+
 			lines := getFileLines(pkg.Fset, file)
 
 			ast.Inspect(file, func(n ast.Node) bool {
@@ -153,7 +167,7 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 					snip := extractSnippet(lines, pos.Line)
 
 					out.References = append(out.References, Reference{
-						File:    fname,
+						File:    relPath,
 						Line:    pos.Line,
 						Snippet: snip,
 					})
@@ -186,7 +200,14 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 		}
 
 		for _, file := range pkg.Syntax {
-			fname := pkg.Fset.File(file.Pos()).Name()
+			absPath := pkg.Fset.File(file.Pos()).Name()
+
+			relPath, err := filepath.Rel(input.Dir, absPath)
+			if err != nil {
+				// fallback: оставить абсолютный путь или обработать по-другому
+				relPath = absPath
+			}
+
 			lines := getFileLines(pkg.Fset, file)
 
 			ast.Inspect(file, func(n ast.Node) bool {
@@ -202,7 +223,7 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 						snip := extractSnippet(lines, pos.Line)
 
 						out.Definitions = append(out.Definitions, Definition{
-							File:    fname,
+							File:    relPath,
 							Line:    pos.Line,
 							Snippet: snip,
 						})
@@ -214,7 +235,7 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 						snip := extractSnippet(lines, pos.Line)
 
 						out.Definitions = append(out.Definitions, Definition{
-							File:    fname,
+							File:    relPath,
 							Line:    pos.Line,
 							Snippet: snip,
 						})
@@ -227,7 +248,7 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 							snip := extractSnippet(lines, pos.Line)
 
 							out.Definitions = append(out.Definitions, Definition{
-								File:    fname,
+								File:    relPath,
 								Line:    pos.Line,
 								Snippet: snip,
 							})
@@ -254,6 +275,7 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 		Collisions:   []string{},
 	}
 
+	// --- Базовая проверка ---
 	if input.OldName == input.NewName {
 		out.Collisions = append(out.Collisions,
 			fmt.Sprintf("cannot rename: %q and %q are the same name", input.OldName, input.NewName))
@@ -277,10 +299,9 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 		}
 
 		for i, file := range pkg.Syntax {
-			fset := pkg.Fset
 			filename := pkg.CompiledGoFiles[i]
 
-			// ✅ создаём независимую копию AST, чтобы не мутировать кэш
+			// --- создаём независимую копию AST ---
 			cloned := astCopy(file)
 
 			origBytes, err := os.ReadFile(filename)
@@ -295,12 +316,12 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 					return false
 				}
 
-				// --- Fallback: TypeSpec для объявлений типов ---
+				// --- Переименование типов (TypeSpec) ---
 				if ts, ok := n.(*ast.TypeSpec); ok {
 					if ts.Name.Name == input.OldName && (input.Kind == "" || input.Kind == "type") {
 						// Проверка коллизии
 						if ts.Name.Name == input.NewName {
-							pos := fset.Position(ts.Pos())
+							pos := pkg.Fset.Position(ts.Pos())
 							out.Collisions = append(out.Collisions,
 								fmt.Sprintf("%s:%d (type name already %s)", pos.Filename, pos.Line, input.NewName))
 
@@ -314,7 +335,7 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 					}
 				}
 
-				// --- Основной вариант: любые идентификаторы ---
+				// --- Общий случай: идентификаторы ---
 				ident, ok := n.(*ast.Ident)
 				if !ok || ident.Name != input.OldName {
 					return true
@@ -325,15 +346,18 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 					return true
 				}
 
-				// Фильтр по виду (если задан)
-				if input.Kind != "" && objStringKind(obj) != input.Kind {
-					return true
+				// --- Фильтр по виду (Kind) ---
+				if input.Kind != "" {
+					objKind := objStringKind(obj)
+					if objKind != input.Kind && objKind != "unknown" {
+						return true
+					}
 				}
 
-				// Проверка коллизий в области видимости
+				// --- Проверка коллизий ---
 				if obj.Parent() != nil {
 					if other := obj.Parent().Lookup(input.NewName); other != nil {
-						pos := fset.Position(ident.Pos())
+						pos := pkg.Fset.Position(ident.Pos())
 						out.Collisions = append(out.Collisions,
 							fmt.Sprintf("%s:%d (conflict with %s)", pos.Filename, pos.Line, other.Name()))
 
@@ -347,33 +371,47 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 				return true
 			})
 
-			if changed {
-				var buf bytes.Buffer
-				err := printer.Fprint(&buf, fset, cloned)
+			if !changed {
+				continue
+			}
+
+			// --- Печатаем AST в новый буфер ---
+			var buf bytes.Buffer
+
+			newFset := token.NewFileSet()
+			if err := printer.Fprint(&buf, newFset, cloned); err != nil {
+				return fail(out, err)
+			}
+
+			newContent := buf.Bytes()
+			// гарантируем финальный перевод строки
+			if len(newContent) > 0 && newContent[len(newContent)-1] != '\n' {
+				newContent = append(newContent, '\n')
+			}
+
+			// --- Нормализуем путь (относительно Dir) ---
+			rel, err := filepath.Rel(input.Dir, filename)
+			if err != nil {
+				rel = filename
+			}
+
+			if input.DryRun {
+				diff := difflib.UnifiedDiff{
+					A:        difflib.SplitLines(string(origBytes)),
+					B:        difflib.SplitLines(string(newContent)),
+					FromFile: rel + " (old)",
+					ToFile:   rel + " (new)",
+					Context:  3,
+				}
+				text, _ := difflib.GetUnifiedDiffString(diff)
+				out.Diffs = append(out.Diffs, FileDiff{Path: rel, Diff: text})
+			} else {
+				err := safeWriteFile(filename, newContent)
 				if err != nil {
 					return fail(out, err)
 				}
 
-				newContent := buf.Bytes()
-
-				if input.DryRun {
-					diff := difflib.UnifiedDiff{
-						A:        difflib.SplitLines(string(origBytes)),
-						B:        difflib.SplitLines(string(newContent)),
-						FromFile: "before",
-						ToFile:   "after",
-						Context:  3,
-					}
-					text, _ := difflib.GetUnifiedDiffString(diff)
-					out.Diffs = append(out.Diffs, FileDiff{Path: filename, Diff: text})
-				} else {
-					err := safeWriteFile(filename, newContent)
-					if err != nil {
-						return fail(out, err)
-					}
-
-					out.ChangedFiles = append(out.ChangedFiles, filename)
-				}
+				out.ChangedFiles = append(out.ChangedFiles, rel)
 			}
 		}
 	}
@@ -401,7 +439,14 @@ func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImport
 		}
 
 		for _, file := range pkg.Syntax {
-			fname := pkg.Fset.File(file.Pos()).Name()
+			absPath := pkg.Fset.File(file.Pos()).Name()
+
+			relPath, err := filepath.Rel(input.Dir, absPath)
+			if err != nil {
+				// fallback: оставить абсолютный путь или обработать по-другому
+				relPath = absPath
+			}
+
 			for _, imp := range file.Imports {
 				if ctxCancelled(ctx) {
 					return fail(out, ctx.Err())
@@ -412,7 +457,7 @@ func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImport
 
 				out.Imports = append(out.Imports, Import{
 					Path: path,
-					File: fname,
+					File: relPath,
 					Line: pos.Line,
 				})
 			}
@@ -427,7 +472,7 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 	ListInterfacesOutput,
 	error,
 ) {
-	mode := packages.NeedSyntax | packages.NeedFiles
+	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles
 
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
@@ -442,7 +487,14 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 		}
 
 		for _, file := range pkg.Syntax {
-			fname := pkg.Fset.File(file.Pos()).Name()
+			absPath := pkg.Fset.File(file.Pos()).Name()
+
+			relPath, err := filepath.Rel(input.Dir, absPath)
+			if err != nil {
+				// fallback: оставить абсолютный путь или обработать по-другому
+				relPath = absPath
+			}
+
 			ast.Inspect(file, func(n ast.Node) bool {
 				if shouldStop(ctx) {
 					return false
@@ -457,7 +509,7 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 					pos := symbolPos(pkg, ts)
 					ifInfo := InterfaceInfo{
 						Name:    ts.Name.Name,
-						File:    fname,
+						File:    relPath,
 						Line:    pos.Line,
 						Methods: []InterfaceMethod{},
 					}
@@ -489,9 +541,9 @@ func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input Anal
 ) {
 	out := AnalyzeComplexityOutput{Functions: []FunctionComplexity{}}
 
-	fset := token.NewFileSet()
+	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedCompiledGoFiles | packages.NeedTypesInfo
 
-	pkgs, err := parser.ParseDir(fset, input.Dir, nil, parser.ParseComments)
+	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
 		return fail(out, err)
 	}
@@ -501,7 +553,15 @@ func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input Anal
 			return nil, out, ctx.Err()
 		}
 
-		for fname, file := range pkg.Files {
+		for _, file := range pkg.Syntax {
+			absPath := pkg.Fset.File(file.Pos()).Name()
+
+			relPath, err := filepath.Rel(input.Dir, absPath)
+			if err != nil {
+				// fallback: оставить абсолютный путь или обработать по-другому
+				relPath = absPath
+			}
+
 			ast.Inspect(file, func(n ast.Node) bool {
 				if shouldStop(ctx) {
 					return false
@@ -512,13 +572,13 @@ func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input Anal
 					return true
 				}
 
-				pos := fset.Position(fd.Pos())
-				lines := fset.Position(fd.End()).Line - pos.Line
+				pos := pkg.Fset.Position(fd.Pos())
+				lines := pkg.Fset.Position(fd.End()).Line - pos.Line
 
 				// запускаем visitor
 				visitor := &ComplexityVisitor{
 					Ctx:        ctx,
-					Fset:       fset,
+					Fset:       pkg.Fset,
 					Nesting:    0,
 					MaxNesting: 0,
 					Cyclomatic: 1, // минимум = 1
@@ -527,7 +587,7 @@ func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input Anal
 
 				out.Functions = append(out.Functions, FunctionComplexity{
 					Name:       fd.Name.Name,
-					File:       fname,
+					File:       relPath,
 					Line:       pos.Line,
 					Lines:      lines,
 					Nesting:    visitor.MaxNesting,
@@ -635,10 +695,17 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 
 			if _, ok := used[obj]; !ok {
 				pos := pkg.Fset.Position(ident.Pos())
+
+				relPath, err := filepath.Rel(input.Dir, pos.Filename)
+				if err != nil {
+					// fallback: оставить абсолютный путь или обработать по-другому
+					relPath = pos.Filename
+				}
+
 				out.Unused = append(out.Unused, DeadSymbol{
 					Name: ident.Name,
 					Kind: objStringKind(obj),
-					File: pos.Filename,
+					File: relPath,
 					Line: pos.Line,
 				})
 			}

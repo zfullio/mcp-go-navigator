@@ -181,7 +181,9 @@ func TestRenameSymbol(t *testing.T) {
 
 	// Проверяем, что Foo реально заменён на MyFoo
 	for _, f := range out.ChangedFiles {
-		data, _ := os.ReadFile(f)
+		full := filepath.Join(tmpDir, f) // ✅ путь относительно tmpDir
+
+		data, _ := os.ReadFile(full)
 		if !strings.Contains(string(data), "MyFoo") {
 			t.Errorf("expected file %s to contain MyFoo", f)
 		}

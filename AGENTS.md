@@ -85,13 +85,13 @@ The server exposes the following tools:
 
 ### Build
 ```bash
-# Build the server executable
-go build -o go-navigator ./cmd/server/main.go
+# Build the go-navigator executable
+go build -o go-navigator ./cmd/go-navigator/main.go
 ```
 
 ### Run
 ```bash
-# Run the server (expects MCP client to connect via stdio)
+# Run the go-navigator (expects MCP client to connect via stdio)
 ./go-navigator
 ```
 
