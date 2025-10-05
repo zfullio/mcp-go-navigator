@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
-	"go/printer"
+	"go/format"
 	"go/token"
 	"go/types"
 	"os"
@@ -283,8 +283,14 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 		return nil, out, nil
 	}
 
-	pkgs, err := loadPackagesWithCache(ctx, input.Dir,
-		packages.NeedSyntax|packages.NeedTypes|packages.NeedTypesInfo|packages.NeedCompiledGoFiles)
+	// --- Загружаем пакеты ---
+	cfg := &packages.Config{
+		Mode:    packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedCompiledGoFiles,
+		Dir:     input.Dir,
+		Context: ctx,
+	}
+
+	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
 		return fail(out, err)
 	}
@@ -293,16 +299,21 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 		return fail(out, fmt.Errorf("no packages loaded from dir: %s", input.Dir))
 	}
 
-	for _, pkg := range pkgs {
-		if ctx.Err() != nil {
-			return fail(out, ctx.Err())
+	// --- Если не dryRun, подгружаем свежие AST (чтобы сбросить изменения после dryRun) ---
+	if !input.DryRun {
+		pkgs, err = packages.Load(cfg, "./...")
+		if err != nil {
+			return fail(out, err)
 		}
+	}
 
+	for _, pkg := range pkgs {
 		for i, file := range pkg.Syntax {
-			filename := pkg.CompiledGoFiles[i]
+			if ctx.Err() != nil {
+				return fail(out, ctx.Err())
+			}
 
-			// --- создаём независимую копию AST ---
-			cloned := astCopy(file)
+			filename := pkg.CompiledGoFiles[i]
 
 			origBytes, err := os.ReadFile(filename)
 			if err != nil {
@@ -311,23 +322,15 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 
 			changed := false
 
-			ast.Inspect(cloned, func(n ast.Node) bool {
+			// --- прямое редактирование AST ---
+			ast.Inspect(file, func(n ast.Node) bool {
 				if ctx.Err() != nil {
 					return false
 				}
 
-				// --- Переименование типов (TypeSpec) ---
+				// 1️⃣ Переименование типов
 				if ts, ok := n.(*ast.TypeSpec); ok {
 					if ts.Name.Name == input.OldName && (input.Kind == "" || input.Kind == "type") {
-						// Проверка коллизии
-						if ts.Name.Name == input.NewName {
-							pos := pkg.Fset.Position(ts.Pos())
-							out.Collisions = append(out.Collisions,
-								fmt.Sprintf("%s:%d (type name already %s)", pos.Filename, pos.Line, input.NewName))
-
-							return true
-						}
-
 						ts.Name.Name = input.NewName
 						changed = true
 
@@ -335,7 +338,17 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 					}
 				}
 
-				// --- Общий случай: идентификаторы ---
+				// 2️⃣ Переименование функций и методов
+				if fn, ok := n.(*ast.FuncDecl); ok {
+					if fn.Name.Name == input.OldName && (input.Kind == "" || input.Kind == "func") {
+						fn.Name.Name = input.NewName
+						changed = true
+
+						return true
+					}
+				}
+
+				// 3️⃣ Переименование идентификаторов
 				ident, ok := n.(*ast.Ident)
 				if !ok || ident.Name != input.OldName {
 					return true
@@ -346,21 +359,9 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 					return true
 				}
 
-				// --- Фильтр по виду (Kind) ---
 				if input.Kind != "" {
 					objKind := objStringKind(obj)
 					if objKind != input.Kind && objKind != "unknown" {
-						return true
-					}
-				}
-
-				// --- Проверка коллизий ---
-				if obj.Parent() != nil {
-					if other := obj.Parent().Lookup(input.NewName); other != nil {
-						pos := pkg.Fset.Position(ident.Pos())
-						out.Collisions = append(out.Collisions,
-							fmt.Sprintf("%s:%d (conflict with %s)", pos.Filename, pos.Line, other.Name()))
-
 						return true
 					}
 				}
@@ -375,25 +376,27 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 				continue
 			}
 
-			// --- Печатаем AST в новый буфер ---
+			// --- форматирование через go/format ---
 			var buf bytes.Buffer
 
-			newFset := token.NewFileSet()
-			if err := printer.Fprint(&buf, newFset, cloned); err != nil {
+			ast.SortImports(pkg.Fset, file)
+
+			if err := format.Node(&buf, pkg.Fset, file); err != nil {
 				return fail(out, err)
 			}
 
 			newContent := buf.Bytes()
-			// гарантируем финальный перевод строки
 			if len(newContent) > 0 && newContent[len(newContent)-1] != '\n' {
 				newContent = append(newContent, '\n')
 			}
 
-			// --- Нормализуем путь (относительно Dir) ---
 			rel, err := filepath.Rel(input.Dir, filename)
 			if err != nil {
 				rel = filename
 			}
+
+			// всегда фиксируем файл в списке изменений
+			out.ChangedFiles = append(out.ChangedFiles, rel)
 
 			if input.DryRun {
 				diff := difflib.UnifiedDiff{
@@ -405,13 +408,13 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 				}
 				text, _ := difflib.GetUnifiedDiffString(diff)
 				out.Diffs = append(out.Diffs, FileDiff{Path: rel, Diff: text})
-			} else {
-				err := safeWriteFile(filename, newContent)
-				if err != nil {
-					return fail(out, err)
-				}
 
-				out.ChangedFiles = append(out.ChangedFiles, rel)
+				continue
+			}
+
+			// --- запись ---
+			if err := safeWriteFile(filename, newContent); err != nil {
+				return fail(out, err)
 			}
 		}
 	}
@@ -671,7 +674,7 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 			return fail(out, ctx.Err())
 		}
 
-		// собираем все использования
+		// --- Собираем все используемые объекты ---
 		used := make(map[types.Object]struct{}, len(pkg.TypesInfo.Uses))
 		for _, obj := range pkg.TypesInfo.Uses {
 			if obj != nil {
@@ -679,7 +682,7 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 			}
 		}
 
-		// проверяем определения
+		// --- Проверяем определения ---
 		for ident, obj := range pkg.TypesInfo.Defs {
 			if shouldStop(ctx) {
 				return fail(out, ctx.Err())
@@ -688,27 +691,25 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 			if obj == nil {
 				continue
 			}
-			// пропускаем экспортируемые символы
-			if ast.IsExported(ident.Name) {
+
+			if !isDeadCandidate(ident, obj) {
 				continue
 			}
 
-			if _, ok := used[obj]; !ok {
-				pos := pkg.Fset.Position(ident.Pos())
-
-				relPath, err := filepath.Rel(input.Dir, pos.Filename)
-				if err != nil {
-					// fallback: оставить абсолютный путь или обработать по-другому
-					relPath = pos.Filename
-				}
-
-				out.Unused = append(out.Unused, DeadSymbol{
-					Name: ident.Name,
-					Kind: objStringKind(obj),
-					File: relPath,
-					Line: pos.Line,
-				})
+			// если объект используется — пропускаем
+			if _, ok := used[obj]; ok {
+				continue
 			}
+
+			pos := pkg.Fset.Position(ident.Pos())
+			rel, _ := filepath.Rel(input.Dir, pos.Filename)
+
+			out.Unused = append(out.Unused, DeadSymbol{
+				Name: ident.Name,
+				Kind: objStringKind(obj),
+				File: rel,
+				Line: pos.Line,
+			})
 		}
 	}
 

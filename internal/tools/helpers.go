@@ -164,3 +164,43 @@ func astCopy(src *ast.File) *ast.File {
 
 	return node
 }
+
+// isDeadCandidate определяет, стоит ли вообще рассматривать объект как "мёртвый" кандидат.
+func isDeadCandidate(ident *ast.Ident, obj types.Object) bool {
+	name := ident.Name
+
+	// --- очевидные исключения ---
+	if name == "_" || name == "init" || name == "main" {
+		return false
+	}
+
+	if ast.IsExported(name) {
+		return false // экспортируемые символы не считаем "мёртвыми"
+	}
+
+	if strings.HasSuffix(name, "_test") {
+		return false // тестовые функции
+	}
+
+	// --- интересуют только "реальные" сущности ---
+	switch obj.(type) {
+	case *types.Var, *types.Const, *types.TypeName, *types.Func:
+		// ok
+	default:
+		return false
+	}
+
+	// --- уточняем для функций ---
+	if fn, ok := obj.(*types.Func); ok {
+		if sig, ok := fn.Type().(*types.Signature); ok && sig.Recv() != nil {
+			// это метод
+			// неэкспортируемые методы анализируем, экспортируемые — пропускаем
+			if ast.IsExported(fn.Name()) {
+				return false
+			}
+			// иначе — кандидат
+		}
+	}
+
+	return true
+}
