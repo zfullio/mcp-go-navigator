@@ -377,3 +377,65 @@ type ASTRewriteOutput struct {
 	// TotalChanges - общее количество внесенных изменений
 	TotalChanges int `json:"totalChanges" jsonschema:"Total number of changes made"`
 }
+
+// ------------------ read func ------------------
+
+// ReadFuncInput содержит входные данные для инструмента ReadFunc.
+type ReadFuncInput struct {
+	// Dir - корневая директория Go-модуля
+	Dir string `json:"dir" jsonschema:"Root directory of the Go module"`
+	// Name - имя функции или метода (например, 'List' или 'TaskService.List')
+	Name string `json:"name" jsonschema:"Function or method name (e.g., 'List' or 'TaskService.List')"`
+}
+
+// FunctionSource представляет исходный код функции или метода в Go-коде.
+type FunctionSource struct {
+	// Name - имя функции
+	Name string `json:"name" jsonschema:"Function name"`
+	// Receiver - имя типа-получателя, если это метод (например, 'TaskService')
+	Receiver string `json:"receiver,omitempty" jsonschema:"Receiver type name if this is a method (e.g., 'TaskService')"`
+	// Package - путь к пакету, в котором определена функция
+	Package string `json:"package" jsonschema:"Package path where the function is defined"`
+	// File - относительный путь к файлу, где определена функция
+	File string `json:"file" jsonschema:"Relative path to the file where the function is defined"`
+	// StartLine - строка начала функции
+	StartLine int `json:"startLine" jsonschema:"Starting line number of the function"`
+	// EndLine - строка окончания функции
+	EndLine int `json:"endLine" jsonschema:"Ending line number of the function"`
+	// SourceCode - полный исходный код функции
+	SourceCode string `json:"sourceCode" jsonschema:"Full source code of the function or method"`
+}
+
+// ReadFuncOutput содержит результаты работы инструмента ReadFunc.
+type ReadFuncOutput struct {
+	// Function - найденная функция с метаданными и исходным кодом
+	Function FunctionSource `json:"function" jsonschema:"Extracted function with metadata and source code"`
+}
+
+// ------------------ read file ------------------
+
+// ReadFileInput содержит входные данные для инструмента ReadFile.
+type ReadFileInput struct {
+	// Dir - корневая директория проекта (Go-модуль)
+	Dir string `json:"dir" jsonschema:"Root directory of the Go module"`
+	// File - относительный путь к файлу, который нужно прочитать
+	File string `json:"file" jsonschema:"Relative path to the Go source file to read"`
+	// Mode - режим чтения: "raw" (только текст), "summary" (пакет, импорты, символы, строки), "ast" (полный AST-анализ)
+	Mode string `json:"mode,omitempty" jsonschema:"Read mode: raw, summary, or ast"`
+}
+
+// ReadFileOutput содержит результаты работы инструмента ReadFile.
+type ReadFileOutput struct {
+	// File - путь к прочитанному файлу
+	File string `json:"file" jsonschema:"File path that was read"`
+	// Package - имя пакета, объявленного в файле
+	Package string `json:"package,omitempty" jsonschema:"Declared Go package name"`
+	// Imports - список импортированных пакетов
+	Imports []Import `json:"imports,omitempty" jsonschema:"List of imported packages in the file"`
+	// Symbols - функции, структуры, интерфейсы, константы и т.д.
+	Symbols []Symbol `json:"symbols,omitempty" jsonschema:"List of declared symbols within the file"`
+	// LineCount - общее количество строк в файле
+	LineCount int `json:"lineCount" jsonschema:"Total number of lines in the file"`
+	// Source - исходный код файла (если запрошен режим raw или ast)
+	Source string `json:"source,omitempty" jsonschema:"Full source code of the file if requested"`
+}

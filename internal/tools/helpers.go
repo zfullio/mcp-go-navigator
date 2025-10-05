@@ -530,3 +530,27 @@ func compareExprSlices(a, b []ast.Expr) bool {
 
 	return true
 }
+
+// receiverName возвращает имя типа-получателя для метода, если он присутствует.
+// Например, для `func (s *TaskService) List()` вернёт "TaskService".
+// Если функция не является методом, возвращает пустую строку.
+func receiverName(fd *ast.FuncDecl) string {
+	if fd.Recv == nil || len(fd.Recv.List) == 0 {
+		return ""
+	}
+
+	recvType := fd.Recv.List[0].Type
+
+	switch expr := recvType.(type) {
+	case *ast.StarExpr:
+		// Указатель на тип, например (*TaskService)
+		if ident, ok := expr.X.(*ast.Ident); ok {
+			return ident.Name
+		}
+	case *ast.Ident:
+		// Прямой тип без указателя, например TaskService
+		return expr.Name
+	}
+
+	return ""
+}

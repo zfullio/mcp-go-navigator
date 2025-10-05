@@ -1295,3 +1295,236 @@ func (v *ASTRewriteVisitor) Rewrite(node ast.Node) ast.Node {
 		return true
 	}, nil)
 }
+
+// ReadFunc возвращает исходный код и метаданные конкретной функции или метода.
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории и имени функции (возможно с получателем)
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - исходный код функции и её метаданные
+//   - ошибку, если функция не найдена или произошла ошибка при анализе
+func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput) (
+	*mcp.CallToolResult,
+	ReadFuncOutput,
+	error,
+) {
+	start := logStart("ReadFunc", map[string]string{"dir": input.Dir, "name": input.Name})
+	out := ReadFuncOutput{}
+	defer func() { logEnd("ReadFunc", start, 1) }()
+
+	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedTypes | packages.NeedTypesInfo
+
+	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
+	if err != nil {
+		logError("ReadFunc", err, "failed to load packages")
+
+		return fail(out, err)
+	}
+
+	target := input.Name
+	var receiver, funcName string
+
+	// Поддержка формата "Type.Method"
+	if strings.Contains(target, ".") {
+		parts := strings.SplitN(target, ".", 2)
+		receiver, funcName = parts[0], parts[1]
+	} else {
+		funcName = target
+	}
+
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Syntax {
+			fset := pkg.Fset
+			abs := fset.File(file.Pos()).Name()
+			rel, _ := filepath.Rel(input.Dir, abs)
+
+			ast.Inspect(file, func(n ast.Node) bool {
+				fd, ok := n.(*ast.FuncDecl)
+				if !ok {
+					return true
+				}
+
+				if fd.Name.Name != funcName {
+					return true
+				}
+
+				recv := receiverName(fd)
+
+				// Если указан получатель, фильтруем
+				if receiver != "" && recv != receiver {
+					return true
+				}
+
+				startPos := fset.Position(fd.Pos())
+				endPos := fset.Position(fd.End())
+
+				var buf bytes.Buffer
+				if err := format.Node(&buf, fset, fd); err != nil {
+					logError("ReadFunc", err, "failed to format function")
+
+					return false
+				}
+
+				out.Function = FunctionSource{
+					Name:       fd.Name.Name,
+					Receiver:   recv,
+					Package:    pkg.PkgPath,
+					File:       rel,
+					StartLine:  startPos.Line,
+					EndLine:    endPos.Line,
+					SourceCode: buf.String(),
+				}
+
+				return false // нашли — прерываем обход
+			})
+
+			if out.Function.Name != "" {
+				return nil, out, nil
+			}
+		}
+	}
+
+	return nil, out, fmt.Errorf("function %q not found", input.Name)
+}
+
+// ReadFile возвращает информацию о Go-файле: пакет, импорты, символы, количество строк и (опционально) исходный код.
+//
+// Режимы работы:
+//   - "raw"     — возвращает только исходный код и количество строк
+//   - "summary" — возвращает пакет, импорты, символы, количество строк (без исходника)
+//   - "ast"     — полный анализ AST, включая исходник и символы
+func ReadFile(ctx context.Context, req *mcp.CallToolRequest, input ReadFileInput) (
+	*mcp.CallToolResult,
+	ReadFileOutput,
+	error,
+) {
+	start := logStart("ReadFile", map[string]string{"dir": input.Dir, "file": input.File, "mode": input.Mode})
+	out := ReadFileOutput{File: input.File}
+	defer func() { logEnd("ReadFile", start, 1) }()
+
+	// 1️⃣ Проверяем, что файл существует
+	path := filepath.Join(input.Dir, input.File)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		logError("ReadFile", err, "failed to read file")
+
+		return fail(out, fmt.Errorf("failed to read file %q: %w", input.File, err))
+	}
+
+	out.Source = string(content)
+	out.LineCount = strings.Count(out.Source, "\n") + 1 // учитываем последнюю строку
+
+	if input.Mode == "raw" {
+		return nil, out, nil
+	}
+
+	// 2️⃣ Разбираем AST
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, content, parser.ParseComments)
+	if err != nil {
+		logError("ReadFile", err, "failed to parse file")
+
+		return fail(out, fmt.Errorf("failed to parse file %q: %w", input.File, err))
+	}
+
+	out.Package = file.Name.Name
+
+	// 3️⃣ Импорты
+	for _, imp := range file.Imports {
+		out.Imports = append(out.Imports, Import{
+			Path: strings.Trim(imp.Path.Value, `"`),
+			File: input.File,
+			Line: fset.Position(imp.Pos()).Line,
+		})
+	}
+
+	// 4️⃣ Символы
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch decl := n.(type) {
+		case *ast.FuncDecl:
+			out.Symbols = append(out.Symbols, Symbol{
+				Kind:     "func",
+				Name:     decl.Name.Name,
+				Package:  out.Package,
+				File:     input.File,
+				Line:     fset.Position(decl.Pos()).Line,
+				Exported: decl.Name.IsExported(),
+			})
+		case *ast.TypeSpec:
+			switch decl.Type.(type) {
+			case *ast.StructType:
+				out.Symbols = append(out.Symbols, Symbol{
+					Kind:     "struct",
+					Name:     decl.Name.Name,
+					Package:  out.Package,
+					File:     input.File,
+					Line:     fset.Position(decl.Pos()).Line,
+					Exported: decl.Name.IsExported(),
+				})
+			case *ast.InterfaceType:
+				out.Symbols = append(out.Symbols, Symbol{
+					Kind:     "interface",
+					Name:     decl.Name.Name,
+					Package:  out.Package,
+					File:     input.File,
+					Line:     fset.Position(decl.Pos()).Line,
+					Exported: decl.Name.IsExported(),
+				})
+			default:
+				out.Symbols = append(out.Symbols, Symbol{
+					Kind:     "type",
+					Name:     decl.Name.Name,
+					Package:  out.Package,
+					File:     input.File,
+					Line:     fset.Position(decl.Pos()).Line,
+					Exported: decl.Name.IsExported(),
+				})
+			}
+		case *ast.GenDecl:
+			switch decl.Tok {
+			case token.CONST:
+				for _, spec := range decl.Specs {
+					if vs, ok := spec.(*ast.ValueSpec); ok {
+						for _, n := range vs.Names {
+							out.Symbols = append(out.Symbols, Symbol{
+								Kind:     "const",
+								Name:     n.Name,
+								Package:  out.Package,
+								File:     input.File,
+								Line:     fset.Position(n.Pos()).Line,
+								Exported: n.IsExported(),
+							})
+						}
+					}
+				}
+			case token.VAR:
+				for _, spec := range decl.Specs {
+					if vs, ok := spec.(*ast.ValueSpec); ok {
+						for _, n := range vs.Names {
+							out.Symbols = append(out.Symbols, Symbol{
+								Kind:     "var",
+								Name:     n.Name,
+								Package:  out.Package,
+								File:     input.File,
+								Line:     fset.Position(n.Pos()).Line,
+								Exported: n.IsExported(),
+							})
+						}
+					}
+				}
+			}
+		}
+		return true
+	})
+
+	// 5️⃣ Если режим summary — удаляем исходник, оставляем только метаданные
+	if input.Mode == "summary" {
+		out.Source = ""
+	}
+
+	return nil, out, nil
+}
