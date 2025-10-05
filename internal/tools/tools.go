@@ -1,3 +1,4 @@
+// Package tools предоставляет набор инструментов для анализа и рефакторинга Go-кода с использованием Model Context Protocol (MCP).
 package tools
 
 import (
@@ -21,6 +22,17 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+// ListPackages возвращает все Go-пакеты в заданной директории.
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории для сканирования
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - список найденных пакетов
+//   - ошибку, если произошла ошибка при загрузке пакетов
 func ListPackages(ctx context.Context, req *mcp.CallToolRequest, input ListPackagesInput) (
 	*mcp.CallToolResult,
 	ListPackagesOutput,
@@ -51,6 +63,17 @@ func ListPackages(ctx context.Context, req *mcp.CallToolRequest, input ListPacka
 	return nil, out, nil
 }
 
+// ListSymbols возвращает список всех функций, структур, интерфейсов и методов в Go-пакете.
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории и пакета для сканирования
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - список найденных символов
+//   - ошибку, если произошла ошибка при загрузке пакетов
 func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbolsInput) (
 	*mcp.CallToolResult,
 	ListSymbolsOutput,
@@ -147,6 +170,17 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 	return nil, out, nil
 }
 
+// FindReferences находит все ссылки и использования идентификатора с использованием семантического анализа go/types.
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории, идентификатора для поиска и фильтров
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - список найденных ссылок
+//   - ошибку, если символ не найден или произошла другая ошибка
 func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindReferencesInput) (
 	*mcp.CallToolResult,
 	FindReferencesOutput,
@@ -215,6 +249,17 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 	return nil, out, nil
 }
 
+// FindDefinitions находит места определения символа (типа, функции, переменной, константы).
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории и идентификатора для поиска
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - список найденных определений
+//   - ошибку, если произошла ошибка при загрузке пакетов
 func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDefinitionsInput) (
 	*mcp.CallToolResult,
 	FindDefinitionsOutput,
@@ -247,6 +292,17 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 	return nil, out, nil
 }
 
+// RenameSymbol выполняет безопасное переименование символа с учетом области видимости с возможностью предварительного просмотра изменений.
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории, старого и нового имени символа
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - результат переименования с информацией о измененных файлах
+//   - ошибку, если произошла ошибка при загрузке пакетов или символ не найден
 func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSymbolInput) (
 	*mcp.CallToolResult,
 	RenameSymbolOutput,
@@ -396,6 +452,17 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 	return nil, out, nil
 }
 
+// ListImports возвращает список всех импортированных пакетов в Go-файлах в заданной директории.
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории для сканирования
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - список найденных импортов
+//   - ошибку, если произошла ошибка при загрузке пакетов
 func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImportsInput) (
 	*mcp.CallToolResult,
 	ListImportsOutput,
@@ -431,6 +498,17 @@ func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImport
 	return nil, out, nil
 }
 
+// ListInterfaces возвращает список всех интерфейсов и их методов для анализа зависимостей или мокирования.
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории для сканирования
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - список найденных интерфейсов
+//   - ошибку, если произошла ошибка при загрузке пакетов
 func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInterfacesInput) (
 	*mcp.CallToolResult,
 	ListInterfacesOutput,
@@ -486,6 +564,17 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 	return nil, out, nil
 }
 
+// AnalyzeComplexity анализирует метрики функций: количество строк кода, глубину вложенности и цикломатическую сложность.
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории для анализа
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - результат анализа сложности функций
+//   - ошибку, если произошла ошибка при загрузке пакетов
 func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input AnalyzeComplexityInput) (
 	*mcp.CallToolResult,
 	AnalyzeComplexityOutput,
@@ -581,6 +670,17 @@ func (s *scopedVisitor) Visit(n ast.Node) ast.Visitor {
 	return s.parent.Visit(n)
 }
 
+// DeadCode находит неиспользуемые функции, переменные, константы и типы в Go-проекте.
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории и флага для включения экспортируемых символов
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - результат поиска неиспользуемого кода
+//   - ошибку, если произошла ошибка при загрузке пакетов
 func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput) (
 	*mcp.CallToolResult,
 	DeadCodeOutput,
@@ -663,6 +763,17 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 	return nil, out, nil
 }
 
+// AnalyzeDependencies строит граф зависимостей между внутренними пакетами (импорты, циклы, fan-in/fan-out).
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории для анализа
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - результат анализа зависимостей между пакетами
+//   - ошибку, если произошла ошибка при загрузке пакетов
 func AnalyzeDependencies(ctx context.Context, req *mcp.CallToolRequest, input AnalyzeDependenciesInput) (
 	*mcp.CallToolResult,
 	AnalyzeDependenciesOutput,
@@ -787,6 +898,17 @@ func AnalyzeDependencies(ctx context.Context, req *mcp.CallToolRequest, input An
 	return nil, out, nil
 }
 
+// FindImplementations показывает, какие конкретные типы реализуют интерфейсы (и наоборот).
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории и имени интерфейса для поиска
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - список найденных реализаций
+//   - ошибку, если интерфейс не найден или произошла другая ошибка
 func FindImplementations(ctx context.Context, req *mcp.CallToolRequest, input FindImplementationsInput) (
 	*mcp.CallToolResult,
 	FindImplementationsOutput,
@@ -905,6 +1027,18 @@ func FindImplementations(ctx context.Context, req *mcp.CallToolRequest, input Fi
 	return nil, out, nil
 }
 
+// MetricsSummary агрегирует общую информацию о проекте: количество пакетов/структур/интерфейсов,
+// среднюю цикломатическую сложность, соотношения неиспользуемого кода.
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории для анализа
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - агрегированные метрики проекта
+//   - ошибку, если произошла ошибка при загрузке пакетов
 func MetricsSummary(ctx context.Context, req *mcp.CallToolRequest, input MetricsSummaryInput) (
 	*mcp.CallToolResult,
 	MetricsSummaryOutput,
@@ -1014,6 +1148,17 @@ func MetricsSummary(ctx context.Context, req *mcp.CallToolRequest, input Metrics
 	return nil, out, nil
 }
 
+// ASTRewrite позволяет заменять узлы AST с пониманием типов (например, 'pkg.Foo(x)' -> 'x.Foo()').
+//
+// Параметры:
+//   - ctx: контекст выполнения
+//   - req: запрос инструмента MCP
+//   - input: входные данные с указанием директории, шаблона для поиска и замены
+//
+// Возвращает:
+//   - результат вызова инструмента MCP
+//   - результат перезаписи AST
+//   - ошибку, если произошла ошибка при загрузке пакетов или разборе выражений
 func ASTRewrite(ctx context.Context, req *mcp.CallToolRequest, input ASTRewriteInput) (
 	*mcp.CallToolResult,
 	ASTRewriteOutput,
