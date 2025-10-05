@@ -200,3 +200,57 @@ func sameObject(a, b types.Object) bool {
 
 	return a.Pkg() == b.Pkg() && a.Pos() == b.Pos()
 }
+
+// Helper functions for interface comparison.
+func sameInterface(a, b *types.Interface) bool {
+	if a.NumMethods() != b.NumMethods() {
+		return false
+	}
+
+	// Compare methods between the two interfaces
+	for i := 0; i < a.NumMethods(); i++ {
+		methodA := a.Method(i)
+		found := false
+
+		for j := 0; j < b.NumMethods(); j++ {
+			methodB := b.Method(j)
+			if methodA.Name() == methodB.Name() {
+				if types.Identical(methodA.Type(), methodB.Type()) {
+					found = true
+
+					break
+				}
+			}
+		}
+
+		if !found {
+			return false
+		}
+	}
+
+	return true
+}
+
+func interfaceExtends(impl, target *types.Interface) bool {
+	// Check if impl extends target by having at least all of target's methods
+	for i := 0; i < target.NumMethods(); i++ {
+		targetMethod := target.Method(i)
+		found := false
+
+		for j := 0; j < impl.NumMethods(); j++ {
+			implMethod := impl.Method(j)
+			if targetMethod.Name() == implMethod.Name() &&
+				types.Identical(targetMethod.Type(), implMethod.Type()) {
+				found = true
+
+				break
+			}
+		}
+
+		if !found {
+			return false
+		}
+	}
+
+	return true
+}

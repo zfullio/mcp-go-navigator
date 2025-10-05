@@ -11,9 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"go-navigator/internal/tools"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go-navigator/internal/tools"
 )
 
 func TestListPackages(t *testing.T) {
@@ -599,12 +598,15 @@ func TestAnalyzeDependencies(t *testing.T) {
 
 	// Check that we have basic dependency information
 	hasImports := false
+
 	for _, dep := range out.Dependencies {
 		if len(dep.Imports) > 0 {
 			hasImports = true
+
 			break
 		}
 	}
+
 	if !hasImports {
 		t.Errorf("expected at least one package with imports, got %+v", out.Dependencies)
 	}
@@ -633,6 +635,7 @@ func TestFindImplementations(t *testing.T) {
 			// This might fail if the test data doesn't have the specific interface
 			// We'll need to check what interfaces exist in the test data
 			t.Skipf("Skipping FindImplementations test: %v (interface may not exist in test data)", err)
+
 			return
 		}
 	}
@@ -643,6 +646,7 @@ func TestFindImplementations(t *testing.T) {
 			if impl.Type == "" {
 				t.Errorf("expected implementation type to be set, got empty string")
 			}
+
 			if impl.Interface == "" {
 				t.Errorf("expected interface name to be set, got empty string")
 			}
@@ -662,30 +666,39 @@ func TestMetricsSummary(t *testing.T) {
 	if out.PackageCount <= 0 {
 		t.Errorf("expected at least 1 package, got %d", out.PackageCount)
 	}
+
 	if out.StructCount < 0 {
 		t.Errorf("expected non-negative struct count, got %d", out.StructCount)
 	}
+
 	if out.InterfaceCount < 0 {
 		t.Errorf("expected non-negative interface count, got %d", out.InterfaceCount)
 	}
+
 	if out.FunctionCount < 0 {
 		t.Errorf("expected non-negative function count, got %d", out.FunctionCount)
 	}
+
 	if out.LineCount <= 0 {
 		t.Errorf("expected positive line count, got %d", out.LineCount)
 	}
+
 	if out.FileCount <= 0 {
 		t.Errorf("expected positive file count, got %d", out.FileCount)
 	}
+
 	if out.AverageCyclomatic < 0 {
 		t.Errorf("expected non-negative average cyclomatic complexity, got %f", out.AverageCyclomatic)
 	}
+
 	if out.DeadCodeCount < 0 {
 		t.Errorf("expected non-negative dead code count, got %d", out.DeadCodeCount)
 	}
+
 	if out.ExportedUnusedCount < 0 {
 		t.Errorf("expected non-negative exported unused count, got %d", out.ExportedUnusedCount)
 	}
+
 	if out.ExportedUnusedCount > out.DeadCodeCount {
 		t.Errorf("expected exported unused count (%d) to be <= total dead code count (%d)",
 			out.ExportedUnusedCount, out.DeadCodeCount)
@@ -721,10 +734,12 @@ func TestDeadCodeExtended(t *testing.T) {
 
 	// Count exported symbols in the results
 	exportedCount := 0
+
 	for _, unused := range out.Unused {
 		if unused.IsExported {
 			exportedCount++
 		}
+
 		if unused.Package == "" {
 			t.Errorf("expected Package field to be populated for unused symbol %v", unused)
 		}
@@ -737,6 +752,7 @@ func TestDeadCodeExtended(t *testing.T) {
 
 	// Test without including exported to ensure filtering works
 	in.IncludeExported = false
+
 	_, out2, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
 	if err != nil {
 		t.Fatalf("DeadCode (IncludeExported=false) error: %v", err)
@@ -744,6 +760,7 @@ func TestDeadCodeExtended(t *testing.T) {
 
 	// The second run should have fewer or equal unused symbols (since exported ones are filtered)
 	exportedCount2 := 0
+
 	for _, unused := range out2.Unused {
 		if unused.IsExported {
 			exportedCount2++
@@ -756,25 +773,23 @@ func TestDeadCodeExtended(t *testing.T) {
 }
 
 func TestASTRewrite(t *testing.T) {
-	t.Skip("ASTRewrite test skipped until the implementation is completed with proper pattern matching") // For now skip since implementation is simplified
+	t.Parallel()
 
 	dir := testDir()
-
-	// Create a copy of testdata for this test
 	tmpDir := filepath.Join(os.TempDir(), "ast_rewrite_test")
-	_ = os.RemoveAll(tmpDir)
 
-	err := copyDir(dir, tmpDir)
-	if err != nil {
+	_ = os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir)
+
+	if err := copyDir(dir, tmpDir); err != nil {
 		t.Fatalf("copyDir error: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
 
 	in := tools.ASTRewriteInput{
 		Dir:     tmpDir,
-		Find:    "fmt.Println", // Example pattern to find
-		Replace: "fmt.Printf",  // Example replacement
-		DryRun:  true,          // Use dry run to not modify files
+		Find:    "fmt.Println(x)",
+		Replace: "fmt.Printf(\"%v\\n\", x)",
+		DryRun:  true,
 	}
 
 	_, out, err := tools.ASTRewrite(context.Background(), &mcp.CallToolRequest{}, in)
@@ -782,15 +797,26 @@ func TestASTRewrite(t *testing.T) {
 		t.Fatalf("ASTRewrite error: %v", err)
 	}
 
-	// For now, just verify the structure of the response
+	// 🔹 Проверяем базовые условия
+	if out.TotalChanges == 0 && len(out.Diffs) == 0 {
+		t.Skip("no changes detected – likely no matching pattern in testdata")
+	}
+
 	if out.TotalChanges < 0 {
 		t.Errorf("expected non-negative TotalChanges, got %d", out.TotalChanges)
 	}
-	if len(out.ChangedFiles) < 0 {
-		t.Errorf("expected non-negative ChangedFiles length, got %d", len(out.ChangedFiles))
+
+	if len(out.ChangedFiles) == 0 {
+		t.Errorf("expected at least one ChangedFile, got 0")
 	}
-	if len(out.Diffs) < 0 {
-		t.Errorf("expected non-negative Diffs length, got %d", len(out.Diffs))
+
+	if len(out.Diffs) == 0 {
+		t.Errorf("expected at least one Diff, got 0")
+	}
+
+	// 🔹 Логируем diff для визуальной проверки
+	for _, diff := range out.Diffs {
+		t.Logf("Diff for %s:\n%s", diff.Path, diff.Diff)
 	}
 }
 

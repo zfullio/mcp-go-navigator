@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
+	"go/parser"
 	"go/token"
 	"go/types"
 	"os"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pmezard/go-difflib/difflib"
+	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -69,7 +71,6 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 	}
 
 	for _, pkg := range pkgs {
-
 		pkgPath := pkg.PkgPath
 		if pkgPath == "" {
 			pkgPath = pkg.Name
@@ -399,30 +400,6 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 	return nil, out, nil
 }
 
-// findObjectByName ищет объект по имени (тип, функция, переменная и т.д.)
-func findObjectByName(pkgs []*packages.Package, name string) (types.Object, *packages.Package) {
-	for _, pkg := range pkgs {
-		for ident, obj := range pkg.TypesInfo.Defs {
-			if obj != nil && ident.Name == name {
-				return obj, pkg
-			}
-		}
-	}
-	return nil, nil
-}
-
-// collectFileList просто возвращает список всех файлов пакетов (для dry-run)
-func collectFileList(pkgs []*packages.Package, dir string) []string {
-	files := []string{}
-	for _, pkg := range pkgs {
-		for _, f := range pkg.CompiledGoFiles {
-			rel, _ := filepath.Rel(dir, f)
-			files = append(files, rel)
-		}
-	}
-	return files
-}
-
 func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImportsInput) (
 	*mcp.CallToolResult,
 	ListImportsOutput,
@@ -712,6 +689,7 @@ func AnalyzeDependencies(ctx context.Context, req *mcp.CallToolRequest, input An
 	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
 		logError("AnalyzeDependencies", err, "failed to load packages")
+
 		return fail(out, err)
 	}
 
@@ -721,6 +699,7 @@ func AnalyzeDependencies(ctx context.Context, req *mcp.CallToolRequest, input An
 
 	for _, pkg := range pkgs {
 		pkgMap[pkg.PkgPath] = pkg
+
 		imports := []string{}
 		for impPath := range pkg.Imports {
 			imports = append(imports, impPath)
@@ -730,6 +709,7 @@ func AnalyzeDependencies(ctx context.Context, req *mcp.CallToolRequest, input An
 
 	// Calculate fan-in for each package
 	fanIn := make(map[string]int)
+
 	for _, pkg := range pkgs {
 		for _, impPath := range depGraph[pkg.PkgPath] {
 			fanIn[impPath]++
@@ -742,6 +722,7 @@ func AnalyzeDependencies(ctx context.Context, req *mcp.CallToolRequest, input An
 		for impPath := range pkg.Imports {
 			imports = append(imports, impPath)
 		}
+
 		fanOut := len(imports)
 		fanInCount := fanIn[pkg.PkgPath]
 
@@ -759,6 +740,7 @@ func AnalyzeDependencies(ctx context.Context, req *mcp.CallToolRequest, input An
 	path := []string{}
 
 	var dfs func(string) bool
+
 	dfs = func(pkgPath string) bool {
 		if !visited[pkgPath] {
 			visited[pkgPath] = true
@@ -773,23 +755,30 @@ func AnalyzeDependencies(ctx context.Context, req *mcp.CallToolRequest, input An
 					} else if recStack[dep] {
 						// Found cycle
 						cycleStart := 0
+
 						for i, p := range path {
 							if p == dep {
 								cycleStart = i
+
 								break
 							}
 						}
+
 						cycle := path[cycleStart:]
 						out.Cycles = append(out.Cycles, cycle)
+
 						return true
 					}
 				}
 			}
 		}
+
 		if len(path) > 0 {
 			path = path[:len(path)-1]
 		}
+
 		recStack[pkgPath] = false
+
 		return false
 	}
 
@@ -817,12 +806,15 @@ func FindImplementations(ctx context.Context, req *mcp.CallToolRequest, input Fi
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
 		logError("FindImplementations", err, "failed to load packages")
+
 		return fail(out, err)
 	}
 
 	// Find the target interface/type in the type information
-	var targetObj types.Object
-	var targetTypeName string
+	var (
+		targetObj      types.Object
+		targetTypeName string
+	)
 
 	for _, pkg := range pkgs {
 		scope := pkg.Types.Scope()
@@ -831,6 +823,7 @@ func FindImplementations(ctx context.Context, req *mcp.CallToolRequest, input Fi
 			if obj != nil && obj.Pkg() != nil {
 				targetObj = obj
 				targetTypeName = obj.Type().String()
+
 				break
 			}
 		}
@@ -843,9 +836,11 @@ func FindImplementations(ctx context.Context, req *mcp.CallToolRequest, input Fi
 				if def != nil && def.Name() == input.Name {
 					targetObj = def
 					targetTypeName = def.Type().String()
+
 					break
 				}
 			}
+
 			if targetObj != nil {
 				break
 			}
@@ -905,60 +900,13 @@ func FindImplementations(ctx context.Context, req *mcp.CallToolRequest, input Fi
 						}
 					}
 				}
+
 				return true
 			})
 		}
 	}
 
 	return nil, out, nil
-}
-
-// Helper functions for interface comparison
-func sameInterface(a, b *types.Interface) bool {
-	if a.NumMethods() != b.NumMethods() {
-		return false
-	}
-
-	// Compare methods between the two interfaces
-	for i := 0; i < a.NumMethods(); i++ {
-		methodA := a.Method(i)
-		found := false
-		for j := 0; j < b.NumMethods(); j++ {
-			methodB := b.Method(j)
-			if methodA.Name() == methodB.Name() {
-				if types.Identical(methodA.Type(), methodB.Type()) {
-					found = true
-					break
-				}
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
-}
-
-func interfaceExtends(impl, target *types.Interface) bool {
-	// Check if impl extends target by having at least all of target's methods
-	for i := 0; i < target.NumMethods(); i++ {
-		targetMethod := target.Method(i)
-		found := false
-
-		for j := 0; j < impl.NumMethods(); j++ {
-			implMethod := impl.Method(j)
-			if targetMethod.Name() == implMethod.Name() &&
-				types.Identical(targetMethod.Type(), implMethod.Type()) {
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			return false
-		}
-	}
-	return true
 }
 
 func MetricsSummary(ctx context.Context, req *mcp.CallToolRequest, input MetricsSummaryInput) (
@@ -976,6 +924,7 @@ func MetricsSummary(ctx context.Context, req *mcp.CallToolRequest, input Metrics
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
 		logError("MetricsSummary", err, "failed to load packages")
+
 		return fail(out, err)
 	}
 
@@ -983,14 +932,17 @@ func MetricsSummary(ctx context.Context, req *mcp.CallToolRequest, input Metrics
 	out.PackageCount = len(pkgs)
 
 	// Initialize counters
-	var totalCyclomatic int
-	var functionCount int
-	var structCount int
-	var interfaceCount int
-	var lineCount int
-	var fileCount int
+	var (
+		totalCyclomatic int
+		functionCount   int
+		structCount     int
+		interfaceCount  int
+		lineCount       int
+		fileCount       int
+	)
 
 	// Count symbols and calculate complexity
+
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Syntax {
 			absPath := pkg.Fset.File(file.Pos()).Name()
@@ -1008,6 +960,7 @@ func MetricsSummary(ctx context.Context, req *mcp.CallToolRequest, input Metrics
 				case *ast.FuncDecl:
 					// Count function and calculate its complexity
 					functionCount++
+
 					if decl.Body != nil {
 						visitor := &ComplexityVisitor{
 							Ctx: ctx, Fset: pkg.Fset, Cyclomatic: 1,
@@ -1023,6 +976,7 @@ func MetricsSummary(ctx context.Context, req *mcp.CallToolRequest, input Metrics
 						interfaceCount++
 					}
 				}
+
 				return true
 			})
 		}
@@ -1043,6 +997,7 @@ func MetricsSummary(ctx context.Context, req *mcp.CallToolRequest, input Metrics
 
 	// Count dead code using existing DeadCode logic
 	deadCodeInput := DeadCodeInput{Dir: input.Dir}
+
 	_, deadCodeOutput, err := DeadCode(ctx, req, deadCodeInput)
 	if err == nil {
 		out.DeadCodeCount = len(deadCodeOutput.Unused)
@@ -1051,11 +1006,13 @@ func MetricsSummary(ctx context.Context, req *mcp.CallToolRequest, input Metrics
 	// Count exported but unused symbols separately would require additional analysis
 	// For now, we can approximate by checking exported symbols in the dead code output
 	exportedUnused := 0
+
 	for _, unused := range deadCodeOutput.Unused {
 		if ast.IsExported(unused.Name) {
 			exportedUnused++
 		}
 	}
+
 	out.ExportedUnusedCount = exportedUnused
 
 	return nil, out, nil
@@ -1066,10 +1023,23 @@ func ASTRewrite(ctx context.Context, req *mcp.CallToolRequest, input ASTRewriteI
 	ASTRewriteOutput,
 	error,
 ) {
-	start := logStart("ASTRewrite", map[string]string{"dir": input.Dir, "find": input.Find, "replace": input.Replace})
+	start := logStart("ASTRewrite", map[string]string{
+		"dir": input.Dir, "find": input.Find, "replace": input.Replace,
+	})
 	out := ASTRewriteOutput{}
 
 	defer func() { logEnd("ASTRewrite", start, out.TotalChanges) }()
+
+	// Parse find and replace expressions once
+	findExpr, err := parser.ParseExpr(input.Find)
+	if err != nil {
+		return nil, out, fmt.Errorf("invalid find expression: %w", err)
+	}
+
+	replaceExpr, err := parser.ParseExpr(input.Replace)
+	if err != nil {
+		return nil, out, fmt.Errorf("invalid replace expression: %w", err)
+	}
 
 	cfg := &packages.Config{
 		Mode:    packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedCompiledGoFiles,
@@ -1080,10 +1050,10 @@ func ASTRewrite(ctx context.Context, req *mcp.CallToolRequest, input ASTRewriteI
 	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
 		logError("ASTRewrite", err, "failed to load packages")
+
 		return fail(out, err)
 	}
 
-	// For a basic implementation, we'll walk the AST and replace matching call expressions
 	totalChanges := 0
 
 	for _, pkg := range pkgs {
@@ -1092,53 +1062,54 @@ func ASTRewrite(ctx context.Context, req *mcp.CallToolRequest, input ASTRewriteI
 			origBytes, _ := os.ReadFile(filename)
 			changesInFile := 0
 
-			// This is a simplified implementation - a real one would use more sophisticated AST matching
-			// Here we'll transform the AST based on semantic analysis
-			visitor := &ASTRewriteVisitor{
-				Fset:      pkg.Fset,
-				TypesInfo: pkg.TypesInfo,
-				Pkg:       pkg,
-				Find:      input.Find,
-				Replace:   input.Replace,
-				Changes:   &changesInFile,
+			rewriter := &ASTRewriteVisitor{
+				Fset:        pkg.Fset,
+				TypesInfo:   pkg.TypesInfo,
+				FindPattern: findExpr,
+				ReplaceWith: replaceExpr,
+				Changes:     &changesInFile,
 			}
 
-			ast.Walk(visitor, file)
+			newFile := ast.Node(rewriter.Rewrite(file))
 
-			if changesInFile > 0 {
-				totalChanges += changesInFile
+			if changesInFile == 0 {
+				continue
+			}
 
-				var buf bytes.Buffer
-				err := format.Node(&buf, pkg.Fset, file)
+			var buf bytes.Buffer
+
+			err := format.Node(&buf, pkg.Fset, newFile)
+			if err != nil {
+				logError("ASTRewrite", err, "failed to format file")
+
+				return fail(out, err)
+			}
+
+			newContent := buf.Bytes()
+			if len(newContent) > 0 && newContent[len(newContent)-1] != '\n' {
+				newContent = append(newContent, '\n')
+			}
+
+			rel, _ := filepath.Rel(input.Dir, filename)
+			out.ChangedFiles = append(out.ChangedFiles, rel)
+			totalChanges += changesInFile
+
+			if input.DryRun {
+				diff := difflib.UnifiedDiff{
+					A:        difflib.SplitLines(string(origBytes)),
+					B:        difflib.SplitLines(string(newContent)),
+					FromFile: rel + " (old)",
+					ToFile:   rel + " (new)",
+					Context:  3,
+				}
+				text, _ := difflib.GetUnifiedDiffString(diff)
+				out.Diffs = append(out.Diffs, FileDiff{Path: rel, Diff: text})
+			} else {
+				err := safeWriteFile(filename, newContent)
 				if err != nil {
-					logError("ASTRewrite", err, "failed to format file")
+					logError("ASTRewrite", err, "failed to write file")
+
 					return fail(out, err)
-				}
-
-				newContent := buf.Bytes()
-				if len(newContent) > 0 && newContent[len(newContent)-1] != '\n' {
-					newContent = append(newContent, '\n')
-				}
-
-				rel, _ := filepath.Rel(input.Dir, filename)
-				out.ChangedFiles = append(out.ChangedFiles, rel)
-
-				if input.DryRun {
-					diff := difflib.UnifiedDiff{
-						A:        difflib.SplitLines(string(origBytes)),
-						B:        difflib.SplitLines(string(newContent)),
-						FromFile: rel + " (old)",
-						ToFile:   rel + " (new)",
-						Context:  3,
-					}
-					text, _ := difflib.GetUnifiedDiffString(diff)
-					out.Diffs = append(out.Diffs, FileDiff{Path: rel, Diff: text})
-				} else {
-					err = safeWriteFile(filename, newContent)
-					if err != nil {
-						logError("ASTRewrite", err, "failed to write file")
-						return fail(out, err)
-					}
 				}
 			}
 		}
@@ -1149,45 +1120,47 @@ func ASTRewrite(ctx context.Context, req *mcp.CallToolRequest, input ASTRewriteI
 	return nil, out, nil
 }
 
-// ASTRewriteVisitor implements ast.Visitor to modify AST nodes during traversal
+// ASTRewriteVisitor traverses the AST and rewrites matching nodes.
 type ASTRewriteVisitor struct {
-	Fset      *token.FileSet
-	TypesInfo *types.Info
-	Pkg       *packages.Package
-	Find      string
-	Replace   string
-	Changes   *int
+	Fset        *token.FileSet
+	TypesInfo   *types.Info
+	FindPattern ast.Expr
+	ReplaceWith ast.Expr
+	Changes     *int
 }
 
-func (v *ASTRewriteVisitor) Visit(node ast.Node) ast.Visitor {
-	if node == nil {
-		return nil
-	}
-
-	switch n := node.(type) {
-	case *ast.CallExpr:
-		// In a real implementation, you'd parse the Find/Replace patterns and match them more sophisticatedly
-		// For example, matching "pkg.Func(x)" to transform to "x.Method()"
-
-		// This is a simplified example - a real implementation would be more complex and use semantic analysis
-		exprStr := formatNode(v.Fset, n)
-
-		// This is overly simplified, but demonstrates the concept
-		if exprStr == v.Find {
-			// Here we'd actually transform the AST node according to the replacement pattern
-			// For now, we'll just increment the change counter
-			*v.Changes++
+// Rewrite walks through the AST and replaces matching expressions.
+func (v *ASTRewriteVisitor) Rewrite(node ast.Node) ast.Node {
+	return astutil.Apply(node, func(c *astutil.Cursor) bool {
+		n := c.Node()
+		if n == nil {
+			return true
 		}
-	}
 
-	return v
+		// Сравниваем только выражения
+		expr, ok := n.(ast.Expr)
+		if !ok {
+			return true
+		}
+
+		// Сравниваем текущий узел с искомым паттерном
+		if astEqual(expr, v.FindPattern) {
+			*v.Changes++
+			c.Replace(v.ReplaceWith)
+
+			return false // не спускаться глубже
+		}
+
+		return true
+	}, nil)
 }
 
-// Helper function to format an AST node to string
-func formatNode(fset *token.FileSet, node ast.Node) string {
-	var buf bytes.Buffer
-	if err := format.Node(&buf, fset, node); err != nil {
-		return ""
-	}
-	return buf.String()
+// astEqual compares two AST expressions structurally.
+func astEqual(a, b ast.Expr) bool {
+	var bufA, bufB bytes.Buffer
+
+	_ = format.Node(&bufA, token.NewFileSet(), a)
+	_ = format.Node(&bufB, token.NewFileSet(), b)
+
+	return bufA.String() == bufB.String()
 }

@@ -18,11 +18,11 @@ type ListSymbolsInput struct {
 }
 
 type Symbol struct {
-	Kind     string `json:"kind" jsonschema:"Symbol type (func, struct, interface, method, etc.)"`
-	Name     string `json:"name" jsonschema:"Symbol name"`
-	Package  string `json:"package" jsonschema:"Package where the symbol is defined"`
-	File     string `json:"file" jsonschema:"File where the symbol is defined"`
-	Line     int    `json:"line" jsonschema:"Line number in the file"`
+	Kind     string `json:"kind"     jsonschema:"Symbol type (func, struct, interface, method, etc.)"`
+	Name     string `json:"name"     jsonschema:"Symbol name"`
+	Package  string `json:"package"  jsonschema:"Package where the symbol is defined"`
+	File     string `json:"file"     jsonschema:"File where the symbol is defined"`
+	Line     int    `json:"line"     jsonschema:"Line number in the file"`
 	Exported bool   `json:"exported" jsonschema:"True if the symbol is exported (starts with capital letter)"`
 }
 
@@ -128,24 +128,24 @@ type AnalyzeComplexityOutput struct {
 // ------------------ dead code ------------------
 
 type DeadCodeInput struct {
-	Dir             string `json:"dir" jsonschema:"Root directory to scan for unused symbols"`
+	Dir             string `json:"dir"                       jsonschema:"Root directory to scan for unused symbols"`
 	IncludeExported bool   `json:"includeExported,omitempty" jsonschema:"If true, include exported symbols that are unused"`
 }
 
 type DeadSymbol struct {
-	Name       string `json:"name" jsonschema:"Symbol name"`
-	Kind       string `json:"kind" jsonschema:"Symbol kind (func, var, const, type)"`
-	File       string `json:"file" jsonschema:"File where the unused symbol is declared"`
-	Line       int    `json:"line" jsonschema:"Line number of the symbol"`
+	Name       string `json:"name"       jsonschema:"Symbol name"`
+	Kind       string `json:"kind"       jsonschema:"Symbol kind (func, var, const, type)"`
+	File       string `json:"file"       jsonschema:"File where the unused symbol is declared"`
+	Line       int    `json:"line"       jsonschema:"Line number of the symbol"`
 	IsExported bool   `json:"isExported" jsonschema:"True if the symbol is exported (starts with capital letter)"`
-	Package    string `json:"package" jsonschema:"Package where the symbol is defined"`
+	Package    string `json:"package"    jsonschema:"Package where the symbol is defined"`
 }
 
 type DeadCodeOutput struct {
-	Unused        []DeadSymbol   `json:"unused" jsonschema:"List of unused or dead code symbols"`
-	TotalCount    int            `json:"totalCount" jsonschema:"Total number of unused symbols found"`
+	Unused        []DeadSymbol   `json:"unused"        jsonschema:"List of unused or dead code symbols"`
+	TotalCount    int            `json:"totalCount"    jsonschema:"Total number of unused symbols found"`
 	ExportedCount int            `json:"exportedCount" jsonschema:"Number of exported symbols that are unused"`
-	ByPackage     map[string]int `json:"byPackage" jsonschema:"Count of unused symbols grouped by package"`
+	ByPackage     map[string]int `json:"byPackage"     jsonschema:"Count of unused symbols grouped by package"`
 }
 
 // ------------------ rename symbol ------------------
@@ -169,7 +169,7 @@ type RenameSymbolOutput struct {
 	Collisions   []string   `json:"collisions,omitempty" jsonschema:"List of name conflicts preventing rename"`
 }
 
-// ------------------ analyze dependencies ------------------
+// ------------------ analyze dependencies ------------------.
 type AnalyzeDependenciesInput struct {
 	Dir string `json:"dir" jsonschema:"Root directory to scan for package dependencies"`
 }
@@ -177,34 +177,34 @@ type AnalyzeDependenciesInput struct {
 type PackageDependency struct {
 	Package string   `json:"package" jsonschema:"Package path"`
 	Imports []string `json:"imports" jsonschema:"List of imported packages"`
-	FanIn   int      `json:"fanIn" jsonschema:"Number of other packages that import this package"`
-	FanOut  int      `json:"fanOut" jsonschema:"Number of packages this package imports"`
+	FanIn   int      `json:"fanIn"   jsonschema:"Number of other packages that import this package"`
+	FanOut  int      `json:"fanOut"  jsonschema:"Number of packages this package imports"`
 }
 
 type AnalyzeDependenciesOutput struct {
 	Dependencies []PackageDependency `json:"dependencies" jsonschema:"List of packages and their dependencies"`
-	Cycles       [][]string          `json:"cycles" jsonschema:"List of dependency cycles found in the project"`
+	Cycles       [][]string          `json:"cycles"       jsonschema:"List of dependency cycles found in the project"`
 }
 
-// ------------------ find implementations ------------------
+// ------------------ find implementations ------------------.
 type FindImplementationsInput struct {
 	Dir  string `json:"dir"  jsonschema:"Root directory of the Go module"`
 	Name string `json:"name" jsonschema:"Name of the interface or type to find implementations for"`
 }
 
 type Implementation struct {
-	Type      string `json:"type"       jsonschema:"Implementing type name"`
-	Interface string `json:"interface"  jsonschema:"Interface being implemented"`
-	File      string `json:"file"       jsonschema:"File where the implementation is defined"`
-	Line      int    `json:"line"       jsonschema:"Line number of the implementation"`
-	IsType    bool   `json:"isType"     jsonschema:"True if this is a type implementing an interface, false for interface-to-interface embedding"`
+	Type      string `json:"type"      jsonschema:"Implementing type name"`
+	Interface string `json:"interface" jsonschema:"Interface being implemented"`
+	File      string `json:"file"      jsonschema:"File where the implementation is defined"`
+	Line      int    `json:"line"      jsonschema:"Line number of the implementation"`
+	IsType    bool   `json:"isType"    jsonschema:"True if this is a type implementing an interface, false for interface-to-interface embedding"`
 }
 
 type FindImplementationsOutput struct {
 	Implementations []Implementation `json:"implementations" jsonschema:"List of found implementations"`
 }
 
-// ------------------ metrics summary ------------------
+// ------------------ metrics summary ------------------.
 type MetricsSummaryInput struct {
 	Dir string `json:"dir" jsonschema:"Root directory to scan for project metrics"`
 }
@@ -221,7 +221,7 @@ type MetricsSummaryOutput struct {
 	FileCount           int     `json:"fileCount"           jsonschema:"Total number of Go files"`
 }
 
-// ------------------ ast rewrite ------------------
+// ------------------ ast rewrite ------------------.
 type ASTRewriteInput struct {
 	Dir     string `json:"dir"     jsonschema:"Root directory to perform AST rewriting"`
 	Find    string `json:"find"    jsonschema:"Pattern to find (e.g., 'pkg.Func(x)')"`
@@ -230,7 +230,7 @@ type ASTRewriteInput struct {
 }
 
 type ASTRewriteOutput struct {
-	ChangedFiles []string   `json:"changedFiles" jsonschema:"List of files that were modified"`
+	ChangedFiles []string   `json:"changedFiles"    jsonschema:"List of files that were modified"`
 	Diffs        []FileDiff `json:"diffs,omitempty" jsonschema:"Diff of changes if dry run was used"`
-	TotalChanges int        `json:"totalChanges" jsonschema:"Total number of changes made"`
+	TotalChanges int        `json:"totalChanges"    jsonschema:"Total number of changes made"`
 }
