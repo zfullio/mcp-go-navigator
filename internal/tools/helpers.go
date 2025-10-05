@@ -1,11 +1,8 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"go/ast"
-	"go/parser"
-	"go/printer"
 	"go/token"
 	"go/types"
 	"log"
@@ -91,13 +88,13 @@ func getFileLines(fset *token.FileSet, file *ast.File) []string {
 	return lines
 }
 
-func ctxCancelled(ctx context.Context) bool {
-	select {
-	case <-ctx.Done():
-		return true
-	default:
-		return false
+func getFileLinesFromPath(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
 	}
+
+	return strings.Split(string(data), "\n")
 }
 
 func extractSnippet(lines []string, line int) string {
@@ -152,19 +149,6 @@ func safeWriteFile(path string, data []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// astCopy делает безопасную копию AST-файла без изменения кэшированных пакетов.
-func astCopy(src *ast.File) *ast.File {
-	var buf bytes.Buffer
-
-	fset := token.NewFileSet()
-	_ = printer.Fprint(&buf, fset, src)
-
-	newFset := token.NewFileSet()
-	node, _ := parser.ParseFile(newFset, "", buf.String(), parser.ParseComments)
-
-	return node
-}
-
 // isDeadCandidate определяет, стоит ли вообще рассматривать объект как "мёртвый" кандидат.
 func isDeadCandidate(ident *ast.Ident, obj types.Object) bool {
 	name := ident.Name
@@ -203,4 +187,16 @@ func isDeadCandidate(ident *ast.Ident, obj types.Object) bool {
 	}
 
 	return true
+}
+
+func sameObject(a, b types.Object) bool {
+	if a == nil || b == nil {
+		return false
+	}
+
+	if a == b {
+		return true
+	}
+
+	return a.Pkg() == b.Pkg() && a.Pos() == b.Pos()
 }

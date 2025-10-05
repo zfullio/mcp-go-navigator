@@ -79,47 +79,6 @@ func TestListSymbols(t *testing.T) {
 	}
 }
 
-func TestFindReferences(t *testing.T) {
-	t.Parallel()
-
-	in := tools.FindReferencesInput{
-		Dir:   testDir(),
-		Ident: "Foo",
-	}
-
-	_, out, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
-	if err != nil {
-		t.Fatalf("FindReferences error: %v", err)
-	}
-
-	if len(out.References) == 0 {
-		t.Fatalf("expected to find references to Foo, got 0")
-	}
-
-	// Проверим, что есть определение типа Foo
-	foundType := false
-	// Проверим, что есть использование Foo в bar.go
-	foundUsage := false
-
-	for _, ref := range out.References {
-		if strings.Contains(ref.Snippet, "type Foo struct") {
-			foundType = true
-		}
-
-		if strings.Contains(ref.Snippet, "UseFoo") || strings.Contains(ref.Snippet, "DoSomething") {
-			foundUsage = true
-		}
-	}
-
-	if !foundType {
-		t.Error("expected to find definition of Foo, but not found")
-	}
-
-	if !foundUsage {
-		t.Error("expected to find usage of Foo, but not found")
-	}
-}
-
 func TestFindDefinitions(t *testing.T) {
 	t.Parallel()
 
@@ -137,16 +96,84 @@ func TestFindDefinitions(t *testing.T) {
 		t.Fatalf("expected definitions of Foo, got 0")
 	}
 
-	found := false
+	foundType := false
 
 	for _, d := range out.Definitions {
 		if strings.Contains(d.Snippet, "type Foo struct") {
-			found = true
+			foundType = true
+
+			break
 		}
 	}
 
-	if !found {
+	if !foundType {
 		t.Errorf("expected definition 'type Foo struct', got %+v", out.Definitions)
+	}
+
+	// Дополнительный кейс: проверим, что можно уточнить тип
+	in.Kind = "type"
+
+	_, typedOut, err := tools.FindDefinitions(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindDefinitions (Kind=type) error: %v", err)
+	}
+
+	if len(typedOut.Definitions) == 0 {
+		t.Errorf("expected to find type Foo when Kind=type, got 0")
+	}
+}
+
+func TestFindReferences(t *testing.T) {
+	t.Parallel()
+
+	in := tools.FindReferencesInput{
+		Dir:   testDir(),
+		Ident: "Foo",
+	}
+
+	_, out, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindReferences error: %v", err)
+	}
+
+	if len(out.References) == 0 {
+		t.Fatalf("expected to find references to Foo, got 0")
+	}
+
+	var foundDef, foundUsage bool
+
+	for _, ref := range out.References {
+		switch {
+		case strings.Contains(ref.Snippet, "type Foo struct"):
+			foundDef = true
+		case strings.Contains(ref.Snippet, "UseFoo(") || strings.Contains(ref.Snippet, "DoSomething("):
+			foundUsage = true
+		}
+	}
+
+	if !foundDef {
+		t.Error("expected to find definition of Foo (type Foo struct), but not found")
+	}
+
+	if !foundUsage {
+		t.Error("expected to find usage of Foo (UseFoo / DoSomething), but not found")
+	}
+
+	// ✅ Проверяем, что фильтрация по Kind=type возвращает только типы Foo
+	in.Kind = "type"
+
+	_, typedOut, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindReferences (Kind=type) error: %v", err)
+	}
+
+	if len(typedOut.References) == 0 {
+		t.Errorf("expected to find references when Kind=type, got 0")
+	}
+
+	if len(typedOut.References) > len(out.References) {
+		t.Errorf("expected Kind=type to return <= all references, got %d > %d",
+			len(typedOut.References), len(out.References))
 	}
 }
 
