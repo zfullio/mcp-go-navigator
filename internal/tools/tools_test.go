@@ -11,8 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go-navigator/internal/tools"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestListPackages(t *testing.T) {
@@ -48,8 +49,7 @@ func TestListSymbols(t *testing.T) {
 	t.Parallel()
 
 	in := tools.ListSymbolsInput{
-		Dir:     testDir(),
-		Package: "./...",
+		Dir: testDir(),
 	}
 
 	_, out, err := tools.ListSymbols(context.Background(), &mcp.CallToolRequest{}, in)
@@ -76,6 +76,30 @@ func TestListSymbols(t *testing.T) {
 
 	if !kinds["method"] {
 		t.Errorf("expected to find method, got %+v", out.Symbols)
+	}
+}
+
+func TestListSymbols_FilterByPackage(t *testing.T) {
+	t.Parallel()
+
+	in := tools.ListSymbolsInput{
+		Dir:     testDir(),
+		Package: "sample", // фильтрация по имени пакета
+	}
+
+	_, out, err := tools.ListSymbols(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("ListSymbols error: %v", err)
+	}
+
+	if len(out.Symbols) == 0 {
+		t.Fatalf("expected symbols in package %q, got 0", in.Package)
+	}
+
+	for _, s := range out.Symbols {
+		if s.Package != in.Package {
+			t.Errorf("unexpected symbol from package %q (expected only %q)", s.Package, in.Package)
+		}
 	}
 }
 
