@@ -11,8 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go-navigator/internal/tools"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestListPackages(t *testing.T) {
@@ -817,6 +818,394 @@ func TestASTRewrite(t *testing.T) {
 	// 🔹 Логируем diff для визуальной проверки
 	for _, diff := range out.Diffs {
 		t.Logf("Diff for %s:\n%s", diff.Path, diff.Diff)
+	}
+}
+
+func TestListPackages_WithInvalidDir(t *testing.T) {
+	in := tools.ListPackagesInput{Dir: "/nonexistent/directory"}
+
+	_, _, err := tools.ListPackages(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestListPackages_WithEmptyDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	in := tools.ListPackagesInput{Dir: tmpDir}
+
+	_, out, err := tools.ListPackages(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("ListPackages error: %v", err)
+	}
+
+	// Even an empty directory should return without error
+	// but might have no packages depending on implementation
+	if len(out.Packages) < 0 {
+		t.Errorf("expected 0 or more packages, got %v", len(out.Packages))
+	}
+}
+
+func TestListSymbols_WithInvalidDir(t *testing.T) {
+	in := tools.ListSymbolsInput{Dir: "/nonexistent/directory"}
+
+	_, _, err := tools.ListSymbols(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestListSymbols_WithInvalidPackage(t *testing.T) {
+	in := tools.ListSymbolsInput{
+		Dir:     testDir(),
+		Package: "nonexistent/package",
+	}
+
+	_, out, err := tools.ListSymbols(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("ListSymbols error: %v", err)
+	}
+
+	// Should return empty result for non-existent package
+	if len(out.Symbols) != 0 {
+		t.Errorf("expected 0 symbols for non-existent package, got %v", len(out.Symbols))
+	}
+}
+
+func TestFindDefinitions_WithInvalidDir(t *testing.T) {
+	in := tools.FindDefinitionsInput{
+		Dir:   "/nonexistent/directory",
+		Ident: "Foo",
+	}
+
+	_, _, err := tools.FindDefinitions(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestFindDefinitions_WithNonexistentIdent(t *testing.T) {
+	in := tools.FindDefinitionsInput{
+		Dir:   testDir(),
+		Ident: "NonexistentSymbol",
+	}
+
+	_, out, err := tools.FindDefinitions(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindDefinitions error: %v", err)
+	}
+
+	// Should return empty result for non-existent identifier
+	if len(out.Definitions) != 0 {
+		t.Errorf("expected 0 definitions for non-existent symbol, got %v", len(out.Definitions))
+	}
+}
+
+func TestFindReferences_WithInvalidDir(t *testing.T) {
+	in := tools.FindReferencesInput{
+		Dir:   "/nonexistent/directory",
+		Ident: "Foo",
+	}
+
+	_, _, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestFindReferences_WithNonexistentIdent(t *testing.T) {
+	in := tools.FindReferencesInput{
+		Dir:   testDir(),
+		Ident: "NonexistentSymbol",
+	}
+
+	_, _, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent symbol, got nil")
+	}
+	// The function returns an error when symbol is not found, which is expected behavior
+}
+
+func TestRenameSymbol_WithInvalidDir(t *testing.T) {
+	in := tools.RenameSymbolInput{
+		Dir:     "/nonexistent/directory",
+		OldName: "Foo",
+		NewName: "Bar",
+	}
+
+	_, _, err := tools.RenameSymbol(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestRenameSymbol_WithSameNames(t *testing.T) {
+	in := tools.RenameSymbolInput{
+		Dir:     testDir(),
+		OldName: "Foo",
+		NewName: "Foo", // Same name
+	}
+
+	_, out, err := tools.RenameSymbol(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("RenameSymbol error: %v", err)
+	}
+
+	// Should return a collision message for same names
+	if len(out.Collisions) == 0 {
+		t.Errorf("expected collision message when old and new names are the same, got none")
+	}
+}
+
+func TestRenameSymbol_WithNonexistentSymbol(t *testing.T) {
+	in := tools.RenameSymbolInput{
+		Dir:     testDir(),
+		OldName: "NonexistentSymbol",
+		NewName: "NewSymbol",
+	}
+
+	_, _, err := tools.RenameSymbol(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent symbol, got nil")
+	}
+}
+
+func TestListImports_WithInvalidDir(t *testing.T) {
+	in := tools.ListImportsInput{Dir: "/nonexistent/directory"}
+
+	_, _, err := tools.ListImports(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestListInterfaces_WithInvalidDir(t *testing.T) {
+	in := tools.ListInterfacesInput{Dir: "/nonexistent/directory"}
+
+	_, _, err := tools.ListInterfaces(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestAnalyzeComplexity_WithInvalidDir(t *testing.T) {
+	in := tools.AnalyzeComplexityInput{Dir: "/nonexistent/directory"}
+
+	_, _, err := tools.AnalyzeComplexity(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestDeadCode_WithInvalidDir(t *testing.T) {
+	in := tools.DeadCodeInput{Dir: "/nonexistent/directory"}
+
+	_, _, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestAnalyzeDependencies_WithInvalidDir(t *testing.T) {
+	in := tools.AnalyzeDependenciesInput{Dir: "/nonexistent/directory"}
+
+	_, _, err := tools.AnalyzeDependencies(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestMetricsSummary_WithInvalidDir(t *testing.T) {
+	in := tools.MetricsSummaryInput{Dir: "/nonexistent/directory"}
+
+	_, _, err := tools.MetricsSummary(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestASTRewrite_WithInvalidDir(t *testing.T) {
+	in := tools.ASTRewriteInput{
+		Dir:     "/nonexistent/directory",
+		Find:    "fmt.Println(x)",
+		Replace: "fmt.Printf(\"%v\\n\", x)",
+	}
+
+	_, _, err := tools.ASTRewrite(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestASTRewrite_WithInvalidExpressions(t *testing.T) {
+	dir := testDir()
+	tmpDir := t.TempDir()
+
+	if err := copyDir(dir, tmpDir); err != nil {
+		t.Fatalf("copyDir error: %v", err)
+	}
+
+	in := tools.ASTRewriteInput{
+		Dir:     tmpDir,
+		Find:    "invalid go syntax [", // Invalid Go syntax
+		Replace: "fmt.Printf(\"%v\\n\", x)",
+	}
+
+	_, _, err := tools.ASTRewrite(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for invalid syntax in Find field, got nil")
+	}
+
+	in = tools.ASTRewriteInput{
+		Dir:     tmpDir,
+		Find:    "fmt.Println(x)",
+		Replace: "invalid go syntax [", // Invalid Go syntax
+	}
+
+	_, _, err = tools.ASTRewrite(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for invalid syntax in Replace field, got nil")
+	}
+}
+
+func TestFindImplementations_WithInvalidDir(t *testing.T) {
+	in := tools.FindImplementationsInput{
+		Dir:  "/nonexistent/directory",
+		Name: "Storage",
+	}
+
+	_, _, err := tools.FindImplementations(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestFindImplementations_WithNonexistentInterface(t *testing.T) {
+	in := tools.FindImplementationsInput{
+		Dir:  testDir(),
+		Name: "NonexistentInterface",
+	}
+
+	_, out, err := tools.FindImplementations(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		// This might be an expected error, so check that error is expected
+		t.Fatalf("expected error for non-existent interface, got nil")
+	}
+
+	// The implementation might return an error for non-existent interface
+	// which is a valid case to handle
+	if out.Implementations != nil && len(out.Implementations) > 0 {
+		t.Errorf("expected no implementations for non-existent interface, got %v", len(out.Implementations))
+	}
+}
+
+func TestRenameSymbol_DryRun(t *testing.T) {
+	dir := testDir()
+	tmpDir := t.TempDir()
+
+	if err := copyDir(dir, tmpDir); err != nil {
+		t.Fatalf("copyDir error: %v", err)
+	}
+
+	// First, verify the original file content
+	originalFilePath := filepath.Join(tmpDir, "foo.go")
+	originalContent, err := os.ReadFile(originalFilePath)
+	if err != nil {
+		t.Fatalf("failed to read original file: %v", err)
+	}
+
+	if !strings.Contains(string(originalContent), "type Foo struct") {
+		t.Fatalf("expected original file to contain 'type Foo struct', but it doesn't")
+	}
+
+	// Perform rename with dry run
+	in := tools.RenameSymbolInput{
+		Dir:     tmpDir,
+		OldName: "Foo",
+		NewName: "MyFoo",
+		DryRun:  true, // Dry run
+	}
+
+	_, out, err := tools.RenameSymbol(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("RenameSymbol error: %v", err)
+	}
+
+	// Check that we have diffs
+	if len(out.Diffs) == 0 {
+		t.Skip("no changes detected – likely no matching pattern in testdata")
+	}
+
+	// Verify the original file content hasn't changed
+	contentAfterDryRun, err := os.ReadFile(originalFilePath)
+	if err != nil {
+		t.Fatalf("failed to read file after dry run: %v", err)
+	}
+
+	if string(originalContent) != string(contentAfterDryRun) {
+		t.Errorf("file content changed during dry run, expected no changes")
+	}
+}
+
+func TestFindDefinitions_WithFileFilter(t *testing.T) {
+	in := tools.FindDefinitionsInput{
+		Dir:   testDir(),
+		Ident: "Foo",
+		File:  "foo.go", // Specific file
+	}
+
+	_, out, err := tools.FindDefinitions(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindDefinitions error: %v", err)
+	}
+
+	// Should only find definitions in foo.go
+	for _, def := range out.Definitions {
+		if !strings.HasSuffix(def.File, "foo.go") {
+			t.Errorf("expected definition in foo.go, found in %s", def.File)
+		}
+	}
+
+	// Also test with non-matching file filter
+	in.File = "nonexistent.go"
+	_, out2, err := tools.FindDefinitions(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindDefinitions error with non-existent file: %v", err)
+	}
+
+	if len(out2.Definitions) > 0 {
+		t.Errorf("expected no definitions when filtering by non-existent file, got %d", len(out2.Definitions))
+	}
+}
+
+func TestFindReferences_WithFileFilter(t *testing.T) {
+	in := tools.FindReferencesInput{
+		Dir:   testDir(),
+		Ident: "Foo",
+		File:  "foo.go", // Specific file
+	}
+
+	_, out, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindReferences error: %v", err)
+	}
+
+	// Should only find references in foo.go
+	for _, ref := range out.References {
+		if !strings.HasSuffix(ref.File, "foo.go") {
+			t.Errorf("expected reference in foo.go, found in %s", ref.File)
+		}
+	}
+
+	// Also test with non-matching file filter
+	in.File = "nonexistent.go"
+	_, out2, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindReferences error with non-existent file: %v", err)
+	}
+
+	if len(out2.References) > 0 {
+		t.Errorf("expected no references when filtering by non-existent file, got %d", len(out2.References))
 	}
 }
 

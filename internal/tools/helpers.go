@@ -7,6 +7,7 @@ import (
 	"go/types"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -343,4 +344,51 @@ func init() {
 
 	// Clean up file lines cache entries older than 30 minutes every 10 minutes
 	startFileLinesCacheCleanup(10*time.Minute, 30*time.Minute)
+}
+
+func findTargetObject(ctx context.Context, pkgs []*packages.Package, ident, kind string) types.Object {
+	for _, pkg := range pkgs {
+		if shouldStop(ctx) {
+			return nil
+		}
+
+		if scope := pkg.Types.Scope(); scope != nil {
+			if obj := scope.Lookup(ident); obj != nil {
+				if kind == "" || objStringKind(obj) == kind {
+					return obj
+				}
+			}
+		}
+
+		for id, def := range pkg.TypesInfo.Defs {
+			if shouldStop(ctx) {
+				return nil
+			}
+			if def != nil && id.Name == ident {
+				if kind == "" || objStringKind(def) == kind {
+					return def
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func appendDefinition(out *[]Definition, dir string, fset *token.FileSet, pos token.Pos, fileFilter string) {
+	posn := fset.Position(pos)
+	if posn.Filename == "" {
+		return
+	}
+	if fileFilter != "" && !strings.HasSuffix(posn.Filename, fileFilter) {
+		return
+	}
+	rel, _ := filepath.Rel(dir, posn.Filename)
+	lines := getFileLinesFromPath(posn.Filename)
+	snippet := extractSnippet(lines, posn.Line)
+	*out = append(*out, Definition{File: rel, Line: posn.Line, Snippet: snippet})
+}
+
+func appendReference(out *[]Reference, dir string, fset *token.FileSet, absPath string, line int, snippet string) {
+	rel, _ := filepath.Rel(dir, absPath)
+	*out = append(*out, Reference{File: rel, Line: line, Snippet: snippet})
 }

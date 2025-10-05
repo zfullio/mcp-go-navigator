@@ -160,53 +160,13 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 	defer func() { logEnd("FindReferences", start, len(out.References)) }()
 
 	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedTypes | packages.NeedTypesInfo
-
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
-		logError("FindReferences", err, "failed to load packages")
-
 		return fail(out, err)
 	}
 
-	// Find the target object to find references for
-	var targetObj types.Object
-
-	for _, pkg := range pkgs {
-		if shouldStop(ctx) {
-			return fail(out, context.Canceled)
-		}
-
-		// First check the package scope
-		scope := pkg.Types.Scope()
-		if scope != nil {
-			if obj := scope.Lookup(input.Ident); obj != nil {
-				if input.Kind == "" || objStringKind(obj) == input.Kind {
-					targetObj = obj
-					break
-				}
-			}
-		}
-
-		// Then check all definitions
-		for ident, def := range pkg.TypesInfo.Defs {
-			if shouldStop(ctx) {
-				return fail(out, context.Canceled)
-			}
-
-			if def != nil && ident.Name == input.Ident {
-				if input.Kind == "" || objStringKind(def) == input.Kind {
-					targetObj = def
-					break
-				}
-			}
-		}
-
-		if targetObj != nil {
-			break
-		}
-	}
-
-	if targetObj == nil {
+	target := findTargetObject(ctx, pkgs, input.Ident, input.Kind)
+	if target == nil {
 		return nil, out, fmt.Errorf("symbol %q not found", input.Ident)
 	}
 
@@ -216,36 +176,21 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 		}
 
 		for _, file := range pkg.Syntax {
-			if shouldStop(ctx) {
-				return fail(out, context.Canceled)
-			}
-
 			absPath := pkg.Fset.File(file.Pos()).Name()
-			relPath, _ := filepath.Rel(input.Dir, absPath)
 			lines := getFileLines(pkg.Fset, file)
 
 			ast.Inspect(file, func(n ast.Node) bool {
-				if shouldStop(ctx) {
-					return false
-				}
-
 				ident, ok := n.(*ast.Ident)
 				if !ok || ident.Name != input.Ident {
 					return true
 				}
 
 				obj := pkg.TypesInfo.ObjectOf(ident)
-				if obj == nil {
+				if obj == nil || (input.Kind != "" && input.Kind != objStringKind(obj)) {
 					return true
 				}
 
-				// Check if the object kind matches if specified
-				if input.Kind != "" && input.Kind != objStringKind(obj) {
-					return true
-				}
-
-				// Check if this reference is for our target object
-				if !sameObject(obj, targetObj) {
+				if !sameObject(obj, target) {
 					return true
 				}
 
@@ -253,17 +198,12 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 				if pos.Filename == "" {
 					return true
 				}
-
-				// Check if we need to filter by file
 				if input.File != "" && !strings.HasSuffix(pos.Filename, input.File) {
 					return true
 				}
 
 				snip := extractSnippet(lines, pos.Line)
-				out.References = append(out.References, Reference{
-					File: relPath, Line: pos.Line, Snippet: snip,
-				})
-
+				appendReference(&out.References, input.Dir, pkg.Fset, absPath, pos.Line, snip)
 				return true
 			})
 		}
@@ -285,11 +225,8 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 	defer func() { logEnd("FindDefinitions", start, len(out.Definitions)) }()
 
 	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedTypes | packages.NeedTypesInfo
-
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
-		logError("FindDefinitions", err, "failed to load packages")
-
 		return fail(out, err)
 	}
 
@@ -298,52 +235,8 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 			return fail(out, context.Canceled)
 		}
 
-		// First check the package scope
-		scope := pkg.Types.Scope()
-		if scope != nil {
-			obj := scope.Lookup(input.Ident)
-			if obj != nil {
-				// Check if the object kind matches if specified
-				if input.Kind == "" || objStringKind(obj) == input.Kind {
-					pos := pkg.Fset.Position(obj.Pos())
-					if pos.Filename != "" {
-						// Check if we need to filter by file
-						if input.File == "" || strings.HasSuffix(pos.Filename, input.File) {
-							rel, _ := filepath.Rel(input.Dir, pos.Filename)
-							lines := getFileLinesFromPath(pos.Filename)
-							snippet := extractSnippet(lines, pos.Line)
-							out.Definitions = append(out.Definitions, Definition{
-								File: rel, Line: pos.Line, Snippet: snippet,
-							})
-						}
-					}
-				}
-			}
-		}
-
-		// Then check all definitions in the package
-		for ident, obj := range pkg.TypesInfo.Defs {
-			if shouldStop(ctx) {
-				return fail(out, context.Canceled)
-			}
-
-			if obj != nil && ident.Name == input.Ident {
-				// Check if the object kind matches if specified
-				if input.Kind == "" || objStringKind(obj) == input.Kind {
-					pos := pkg.Fset.Position(obj.Pos())
-					if pos.Filename != "" {
-						// Check if we need to filter by file
-						if input.File == "" || strings.HasSuffix(pos.Filename, input.File) {
-							rel, _ := filepath.Rel(input.Dir, pos.Filename)
-							lines := getFileLinesFromPath(pos.Filename)
-							snippet := extractSnippet(lines, pos.Line)
-							out.Definitions = append(out.Definitions, Definition{
-								File: rel, Line: pos.Line, Snippet: snippet,
-							})
-						}
-					}
-				}
-			}
+		if obj := findTargetObject(ctx, []*packages.Package{pkg}, input.Ident, input.Kind); obj != nil {
+			appendDefinition(&out.Definitions, input.Dir, pkg.Fset, obj.Pos(), input.File)
 		}
 	}
 
