@@ -1359,7 +1359,11 @@ func ASTRewrite(ctx context.Context, req *mcp.CallToolRequest, input ASTRewriteI
 	start := logStart("ASTRewrite", map[string]string{
 		"dir": input.Dir, "find": input.Find, "replace": input.Replace,
 	})
-	out := ASTRewriteOutput{}
+	out := ASTRewriteOutput{
+		ChangedFiles: []string{},
+		Diffs:        []FileDiff{},
+		TotalChanges: 0,
+	}
 
 	defer func() { logEnd("ASTRewrite", start, out.TotalChanges) }()
 
