@@ -38,7 +38,7 @@ func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput
 
 	defer func() { logEnd("ReadFunc", start, 1) }()
 
-	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedTypes | packages.NeedTypesInfo
+	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedName
 
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
