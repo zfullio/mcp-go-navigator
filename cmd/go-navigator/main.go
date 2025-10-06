@@ -9,10 +9,11 @@ import (
 	"syscall"
 	"time"
 
+	"go-navigator/internal/tools"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"go-navigator/internal/tools"
 )
 
 func main() {
@@ -50,7 +51,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Returns all Go packages under the given directory. Use this to explore the project structure.",
+		Description: tools.ListPackagesDesc,
 		Name:        "listPackages",
 		Title:       "List Packages",
 	}, tools.ListPackages)
@@ -61,7 +62,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Lists all functions, structs, interfaces, and methods in a Go package.",
+		Description: tools.ListSymbolsDesc,
 	}, tools.ListSymbols)
 
 	mcp.AddTool[tools.FindDefinitionsInput, tools.FindDefinitionsOutput](server, &mcp.Tool{
@@ -70,7 +71,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Locates where a symbol is defined (type, func, var, const).",
+		Description: tools.FindDefinitionsDesc,
 	}, tools.FindDefinitions)
 
 	mcp.AddTool[tools.FindReferencesInput, tools.FindReferencesOutput](server, &mcp.Tool{
@@ -79,7 +80,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Finds all references and usages of an identifier using go/types semantic analysis.",
+		Description: tools.FindReferencesDesc,
 	}, tools.FindReferences)
 
 	mcp.AddTool[tools.RenameSymbolInput, tools.RenameSymbolOutput](server, &mcp.Tool{
@@ -88,7 +89,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: false,
 		},
-		Description: "Performs a safe, scope-aware rename with dry-run diff and collision detection.",
+		Description: tools.RenameSymbolDesc,
 	}, tools.RenameSymbol)
 
 	mcp.AddTool[tools.ListImportsInput, tools.ListImportsOutput](server, &mcp.Tool{
@@ -97,7 +98,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Lists all imported packages in Go source files under the given directory.",
+		Description: tools.ListImportsDesc,
 	}, tools.ListImports)
 
 	mcp.AddTool[tools.ListInterfacesInput, tools.ListInterfacesOutput](server, &mcp.Tool{
@@ -151,7 +152,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Aggregates general project metrics: package/struct/interface counts, average cyclomatic complexity, unused code ratios.",
+		Description: tools.MetricsSummaryDesc,
 	}, tools.MetricsSummary)
 
 	mcp.AddTool[tools.ASTRewriteInput, tools.ASTRewriteOutput](server, &mcp.Tool{
@@ -169,7 +170,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Returns the full source code and metadata of a Go function or method by name.",
+		Description: tools.ReadFuncDesc,
 	}, tools.ReadFunc)
 
 	mcp.AddTool[tools.ReadFileInput, tools.ReadFileOutput](server, &mcp.Tool{
@@ -178,7 +179,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Reads a Go source file and returns its package, imports, declared symbols, line count, and optionally the full source code.",
+		Description: tools.ReadFileDesc,
 	}, tools.ReadFile)
 
 	mcp.AddTool[tools.ReadStructInput, tools.ReadStructOutput](server, &mcp.Tool{
@@ -187,7 +188,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Returns the declaration of a Go struct, including its fields, tags, comments, and optionally its methods.",
+		Description: tools.ReadStructDesc,
 	}, tools.ReadStruct)
 
 	err := tools.HealthCheck()
