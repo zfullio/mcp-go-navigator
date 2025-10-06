@@ -57,6 +57,7 @@ func loadPackagesWithCache(ctx context.Context, dir string, mode packages.LoadMo
 			if !modified {
 				// Update the file check time
 				packageCache.Lock()
+
 				item.LastFileCheck = time.Now()
 				packageCache.pkgs[cacheKey] = item
 				packageCache.Unlock()
@@ -66,9 +67,11 @@ func loadPackagesWithCache(ctx context.Context, dir string, mode packages.LoadMo
 		if !shouldCheckFiles || !modified {
 			// Use cached data
 			packageCache.Lock()
+
 			item.LastAccess = time.Now()
 			packageCache.pkgs[cacheKey] = item
 			packageCache.Unlock()
+
 			return item.Packages, nil
 		}
 	}
@@ -157,9 +160,10 @@ var fileLinesCache = struct {
 	data: make(map[string]FileLinesCacheItem),
 }
 
-// Global file watcher and tracking
+// Global file watcher and tracking.
 var fileWatcher = struct {
 	sync.RWMutex
+
 	watcher *fsnotify.Watcher
 	// Track which cache keys are associated with each file path
 	fileToCacheKeys map[string]map[string]bool // filePath -> set of cacheKeys
@@ -217,7 +221,7 @@ func startFileLinesCacheCleanup(interval time.Duration, maxAge time.Duration) {
 	}()
 }
 
-// initFileWatcher initializes and starts the file system watcher
+// initFileWatcher initializes and starts the file system watcher.
 func initFileWatcher() error {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -236,6 +240,7 @@ func initFileWatcher() error {
 				if !ok {
 					return
 				}
+
 				if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename) != 0 {
 					// Handle file/directory changes
 					if event.Op&fsnotify.Create != 0 {
@@ -261,7 +266,7 @@ func initFileWatcher() error {
 	return nil
 }
 
-// AddFileToWatch adds a file to the watcher and tracks which cache keys depend on it
+// AddFileToWatch adds a file to the watcher and tracks which cache keys depend on it.
 func AddFileToWatch(filePath string, cacheKey string) error {
 	fileWatcher.Lock()
 	defer fileWatcher.Unlock()
@@ -278,12 +283,13 @@ func AddFileToWatch(filePath string, cacheKey string) error {
 	if _, exists := fileWatcher.fileToCacheKeys[filePath]; !exists {
 		fileWatcher.fileToCacheKeys[filePath] = make(map[string]bool)
 	}
+
 	fileWatcher.fileToCacheKeys[filePath][cacheKey] = true
 
 	return nil
 }
 
-// AddDirToWatch adds a directory to the watcher to track new file creation
+// AddDirToWatch adds a directory to the watcher to track new file creation.
 func AddDirToWatch(dirPath string) error {
 	fileWatcher.Lock()
 	defer fileWatcher.Unlock()
@@ -299,12 +305,12 @@ func AddDirToWatch(dirPath string) error {
 	return nil
 }
 
-// addFileToWatch is an internal function that calls the exported AddFileToWatch
+// addFileToWatch is an internal function that calls the exported AddFileToWatch.
 func addFileToWatch(filePath string, cacheKey string) error {
 	return AddFileToWatch(filePath, cacheKey)
 }
 
-// invalidateCachesForFile invalidates all cache entries that depend on the specified file
+// invalidateCachesForFile invalidates all cache entries that depend on the specified file.
 func invalidateCachesForFile(filePath string) {
 	fileWatcher.RLock()
 	cacheKeys, exists := fileWatcher.fileToCacheKeys[filePath]
@@ -313,9 +319,11 @@ func invalidateCachesForFile(filePath string) {
 	if exists {
 		// Invalidate package cache entries
 		packageCache.Lock()
+
 		for cacheKey := range cacheKeys {
 			delete(packageCache.pkgs, cacheKey)
 		}
+
 		packageCache.Unlock()
 	}
 
@@ -331,7 +339,7 @@ func invalidateCachesForFile(filePath string) {
 	invalidateFileLinesCachesInDir(dir)
 }
 
-// invalidatePackageCachesInDir invalidates all package caches for a specific directory
+// invalidatePackageCachesInDir invalidates all package caches for a specific directory.
 func invalidatePackageCachesInDir(dir string) {
 	packageCache.Lock()
 	defer packageCache.Unlock()
@@ -343,13 +351,14 @@ func invalidatePackageCachesInDir(dir string) {
 		for file := range item.FileModTime {
 			if filepath.Dir(file) == dir {
 				delete(packageCache.pkgs, cacheKey)
+
 				break
 			}
 		}
 	}
 }
 
-// invalidateFileLinesCachesInDir invalidates all file lines caches for files in a specific directory
+// invalidateFileLinesCachesInDir invalidates all file lines caches for files in a specific directory.
 func invalidateFileLinesCachesInDir(dir string) {
 	fileLinesCache.Lock()
 	defer fileLinesCache.Unlock()
