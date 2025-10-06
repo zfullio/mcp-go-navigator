@@ -9,11 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"go-navigator/internal/tools"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"go-navigator/internal/tools"
 )
 
 func main() {

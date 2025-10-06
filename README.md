@@ -127,8 +127,13 @@ Use with any MCP-compatible client to perform code analysis operations.
 
 The project is structured as follows:
 
-- `cmd/server/main.go`: Entry point for the MCP server that registers all tools
-- `internal/tools/tools.go`: Core implementation of all analysis and refactoring tools
+- `cmd/go-navigator/main.go`: Entry point for the MCP server that wires every MCP tool
+- `internal/tools/listers.go`: Listing helpers (`listPackages`, `listSymbols`, `listImports`, `listInterfaces`)
+- `internal/tools/finders.go`: Definition/reference discovery (`findDefinitions`, `findReferences`, `findImplementations`)
+- `internal/tools/analyzers.go`: Metrics and diagnostics (`metricsSummary`, `analyzeComplexity`, `deadCode`, `analyzeDependencies`)
+- `internal/tools/refactorers.go`: Write-capable flows such as `renameSymbol` and `astRewrite`
+- `internal/tools/readers.go`: Source extraction helpers (`readFile`, `readFunc`, `readStruct`)
+- `internal/tools/cache.go`, `helpers.go`, `logging.go`, `descriptions.go`: Shared infrastructure, logging, and tool metadata
 - `internal/tools/tools_test.go`: Comprehensive test suite for all tools
 - `internal/tools/testdata/sample/`: Sample Go files used for testing
 

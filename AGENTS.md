@@ -16,11 +16,17 @@
 │       └── main.go           # MCP server entry point
 ├── internal/
 │   └── tools/
-│       ├── tools.go          # tool implementations + registration helpers
-│       ├── types.go          # JSON schemas for inputs/outputs
-│       ├── helpers.go        # shared AST utilities, caches, diff helpers
-│       ├── logging.go        # structured logging helpers
+│       ├── analyzers.go      # metrics, dead code, dependency graph tools
+│       ├── cache.go          # package/file caches shared across tools
+│       ├── descriptions.go   # tool metadata used during registration
+│       ├── finders.go        # definitions/references/implementations lookups
 │       ├── health.go         # HealthCheck()
+│       ├── helpers.go        # shared AST utilities, diff helpers
+│       ├── listers.go        # list tools (packages, symbols, imports, interfaces)
+│       ├── logging.go        # structured logging helpers
+│       ├── readers.go        # readFile/readFunc/readStruct implementations
+│       ├── refactorers.go    # renameSymbol, astRewrite and other mutating flows
+│       ├── types.go          # JSON schemas for inputs/outputs
 │       ├── tools_test.go     # end-to-end and unit tests
 │       └── testdata/sample/  # fixtures (bar.go, foo.go, complex.go, empty_interface.go,
 │                             #             dead.go, store.go, print.go)
@@ -73,7 +79,7 @@
 6. When detailed source context is needed, fallback to `readFile`/`readFunc`/`readStruct` instead of raw file reads.
 
 ## Operational Notes
-- `helpers.go` still contains high-complexity routines (`compareASTNodes`, deep `RenameSymbol` branches); treat them as refactor targets when feasible.
+- `helpers.go` still hosts the heavy AST comparison utilities (`compareASTNodes`), while `refactorers.go` carries the complex rename pipeline; treat both as prime refactor targets when feasible.
 - MCP clients must already handle grouped schemas for imports/interfaces/symbols; do not reintroduce legacy flat outputs.
 - Module targets Go 1.25 — older toolchains may fail.
 - When extending tests, add new fixtures under `internal/tools/testdata/sample/`; existing files cover edge cases (empty interfaces, dead code, complex control flow).
