@@ -177,7 +177,7 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 	return nil, out, nil
 }
 
-// groupSymbolsByPackageAndFile groups symbols by package and file for token efficiency
+// groupSymbolsByPackageAndFile groups symbols by package and file for token efficiency.
 func groupSymbolsByPackageAndFile(symbols []Symbol) []SymbolGroupByPackage {
 	packageMap := make(map[string]map[string][]SymbolInfo)
 
@@ -199,6 +199,7 @@ func groupSymbolsByPackageAndFile(symbols []Symbol) []SymbolGroupByPackage {
 
 	// Convert to the grouped structure
 	var result []SymbolGroupByPackage
+
 	for pkgName, fileMap := range packageMap {
 		var files []SymbolGroupByFile
 		for fileName, syms := range fileMap {
@@ -227,7 +228,7 @@ func groupSymbolsByPackageAndFile(symbols []Symbol) []SymbolGroupByPackage {
 	return result
 }
 
-// groupFunctionComplexityByFile groups symbols by package and file for token efficiency
+// groupFunctionComplexityByFile groups symbols by package and file for token efficiency.
 func groupFunctionComplexityByFile(functions []FunctionComplexity) []FunctionComplexityGroupByFile {
 	fileMap := make(map[string][]FunctionComplexityInfo)
 
@@ -250,8 +251,8 @@ func groupFunctionComplexityByFile(functions []FunctionComplexity) []FunctionCom
 
 	// Convert to the grouped structure
 	var result []FunctionComplexityGroupByFile
-	for fileName, fns := range fileMap {
 
+	for fileName, fns := range fileMap {
 		// Sort files by name for consistency
 		sort.Slice(fns, func(i, j int) bool {
 			return fns[i].Line < fns[j].Line
@@ -271,7 +272,7 @@ func groupFunctionComplexityByFile(functions []FunctionComplexity) []FunctionCom
 	return result
 }
 
-// groupImportsByFile объединяет импорты по файлам для уменьшения дублирования
+// groupImportsByFile объединяет импорты по файлам для уменьшения дублирования.
 func groupImportsByFile(imports []Import) []ImportGroupByFile {
 	if len(imports) == 0 {
 		return nil
@@ -285,6 +286,7 @@ func groupImportsByFile(imports []Import) []ImportGroupByFile {
 	}
 
 	var result []ImportGroupByFile
+
 	for fileName, infos := range fileMap {
 		sort.Slice(infos, func(i, j int) bool {
 			if infos[i].Path == infos[j].Path {
@@ -307,13 +309,14 @@ func groupImportsByFile(imports []Import) []ImportGroupByFile {
 	return result
 }
 
-// groupInterfacesByPackage объединяет интерфейсы по пакетам
+// groupInterfacesByPackage объединяет интерфейсы по пакетам.
 func groupInterfacesByPackage(data map[string][]InterfaceInfo) []InterfaceGroupByPackage {
 	if len(data) == 0 {
 		return nil
 	}
 
 	var result []InterfaceGroupByPackage
+
 	for pkgName, interfaces := range data {
 		sort.Slice(interfaces, func(i, j int) bool {
 			return interfaces[i].Name < interfaces[j].Name
@@ -1503,6 +1506,7 @@ func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput
 ) {
 	start := logStart("ReadFunc", map[string]string{"dir": input.Dir, "name": input.Name})
 	out := ReadFuncOutput{}
+
 	defer func() { logEnd("ReadFunc", start, 1) }()
 
 	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedTypes | packages.NeedTypesInfo
@@ -1515,6 +1519,7 @@ func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput
 	}
 
 	target := input.Name
+
 	var receiver, funcName string
 
 	// Поддержка формата "Type.Method"
@@ -1552,7 +1557,8 @@ func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput
 				endPos := fset.Position(fd.End())
 
 				var buf bytes.Buffer
-				if err := format.Node(&buf, fset, fd); err != nil {
+				err := format.Node(&buf, fset, fd)
+				if err != nil {
 					logError("ReadFunc", err, "failed to format function")
 
 					return false
@@ -1593,10 +1599,12 @@ func ReadFile(ctx context.Context, req *mcp.CallToolRequest, input ReadFileInput
 ) {
 	start := logStart("ReadFile", map[string]string{"dir": input.Dir, "file": input.File, "mode": input.Mode})
 	out := ReadFileOutput{File: input.File}
+
 	defer func() { logEnd("ReadFile", start, 1) }()
 
 	// 1️⃣ Проверяем, что файл существует
 	path := filepath.Join(input.Dir, input.File)
+
 	content, err := os.ReadFile(path)
 	if err != nil {
 		logError("ReadFile", err, "failed to read file")
@@ -1613,6 +1621,7 @@ func ReadFile(ctx context.Context, req *mcp.CallToolRequest, input ReadFileInput
 
 	// 2️⃣ Разбираем AST
 	fset := token.NewFileSet()
+
 	file, err := parser.ParseFile(fset, path, content, parser.ParseComments)
 	if err != nil {
 		logError("ReadFile", err, "failed to parse file")
@@ -1707,6 +1716,7 @@ func ReadFile(ctx context.Context, req *mcp.CallToolRequest, input ReadFileInput
 				}
 			}
 		}
+
 		return true
 	})
 
@@ -1726,16 +1736,20 @@ func ReadStruct(ctx context.Context, req *mcp.CallToolRequest, input ReadStructI
 ) {
 	start := logStart("ReadStruct", map[string]string{"dir": input.Dir, "name": input.Name})
 	out := ReadStructOutput{}
+
 	defer func() { logEnd("ReadStruct", start, 1) }()
 
 	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedCompiledGoFiles | packages.NeedTypesInfo
+
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
 		logError("ReadStruct", err, "failed to load packages")
+
 		return fail(out, err)
 	}
 
 	target := input.Name
+
 	var pkgName, structName string
 
 	// Поддержка формата models.User
@@ -1772,6 +1786,7 @@ func ReadStruct(ctx context.Context, req *mcp.CallToolRequest, input ReadStructI
 				}
 
 				var buf bytes.Buffer
+
 				_ = format.Node(&buf, fset, ts)
 
 				info := StructInfo{
@@ -1794,10 +1809,12 @@ func ReadStruct(ctx context.Context, req *mcp.CallToolRequest, input ReadStructI
 				// Поля структуры
 				for _, field := range st.Fields.List {
 					fieldType := exprString(field.Type)
+
 					tag := ""
 					if field.Tag != nil {
 						tag = strings.Trim(field.Tag.Value, "`")
 					}
+
 					doc := ""
 					if field.Doc != nil {
 						doc = strings.TrimSpace(field.Doc.Text())
@@ -1831,16 +1848,20 @@ func ReadStruct(ctx context.Context, req *mcp.CallToolRequest, input ReadStructI
 							if !ok || fd.Recv == nil {
 								return true
 							}
+
 							if receiverName(fd) == structName {
 								info.Methods = append(info.Methods, fd.Name.Name)
 							}
+
 							return true
 						})
 					}
+
 					sort.Strings(info.Methods)
 				}
 
 				out.Struct = info
+
 				return false // нашли нужную структуру
 			})
 

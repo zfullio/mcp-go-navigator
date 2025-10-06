@@ -11,9 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"go-navigator/internal/tools"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go-navigator/internal/tools"
 )
 
 func TestListPackages(t *testing.T) {
@@ -217,7 +216,6 @@ func TestListImports(t *testing.T) {
 	if !foundFmt || !foundStrings {
 		t.Errorf("expected to find imports fmt and strings, got %+v", out.Imports)
 	}
-
 }
 
 func TestListInterfaces(t *testing.T) {
@@ -237,6 +235,7 @@ func TestListInterfaces(t *testing.T) {
 	foundLoad := false
 
 	var aggregated []tools.InterfaceInfo
+
 	for _, group := range out.Interfaces {
 		if group.Package == "" {
 			t.Errorf("expected package name in grouped interfaces, got empty string")
@@ -272,7 +271,6 @@ func TestListInterfaces(t *testing.T) {
 	if !foundLoad {
 		t.Errorf("expected to find method Load in Storage, got %+v", out.Interfaces)
 	}
-
 }
 
 func TestListInterfaces_HandlesEmptyInterface(t *testing.T) {
@@ -311,6 +309,7 @@ func TestAnalyzeComplexity(t *testing.T) {
 	}
 
 	funcs := map[string]tools.FunctionComplexityInfo{}
+
 	for _, group := range out.Functions {
 		for _, fn := range group.Functions {
 			funcs[fn.Name] = fn
@@ -329,6 +328,7 @@ func TestAnalyzeComplexity(t *testing.T) {
 		if f.Cyclomatic < 2 {
 			t.Errorf("expected WithIf cyclomatic>=2, got %d", f.Cyclomatic)
 		}
+
 		if f.Nesting < 1 {
 			t.Errorf("expected WithIf nesting>=1, got %d", f.Nesting)
 		}
@@ -340,6 +340,7 @@ func TestAnalyzeComplexity(t *testing.T) {
 		if f.Cyclomatic < 3 {
 			t.Errorf("expected WithLoopAndSwitch cyclomatic>=3, got %d", f.Cyclomatic)
 		}
+
 		if f.Nesting < 2 {
 			t.Errorf("expected WithLoopAndSwitch nesting>=2, got %d", f.Nesting)
 		}
@@ -783,6 +784,7 @@ func TestReadStruct_WithMethods(t *testing.T) {
 	}
 
 	foundID := false
+
 	for _, field := range st.Fields {
 		if field.Name == "ID" && field.Type == "int" {
 			foundID = true
@@ -799,7 +801,8 @@ func TestReadStruct_WithMethods(t *testing.T) {
 }
 
 func TestHealthCheck(t *testing.T) {
-	if err := tools.HealthCheck(); err != nil {
+	err := tools.HealthCheck()
+	if err != nil {
 		t.Fatalf("expected health check to pass, got error: %v", err)
 	}
 }
@@ -807,7 +810,8 @@ func TestHealthCheck(t *testing.T) {
 func TestHealthCheck_NoGoInPath(t *testing.T) {
 	t.Setenv("PATH", "")
 
-	if err := tools.HealthCheck(); err == nil {
+	err := tools.HealthCheck()
+	if err == nil {
 		t.Fatalf("expected health check to fail when PATH is empty")
 	}
 }

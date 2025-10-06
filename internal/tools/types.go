@@ -40,7 +40,7 @@ type Symbol struct {
 	Exported bool `json:"exported" jsonschema:"True if the symbol is exported (starts with capital letter)"`
 }
 
-// SymbolGroupByFile represents symbols grouped by file within a package
+// SymbolGroupByFile represents symbols grouped by file within a package.
 type SymbolGroupByFile struct {
 	// File - файл, в котором определен символ
 	File string `json:"file" jsonschema:"File where the symbols are defined"`
@@ -48,7 +48,7 @@ type SymbolGroupByFile struct {
 	Symbols []SymbolInfo `json:"symbols" jsonschema:"List of symbols in this file"`
 }
 
-// SymbolGroupByPackage represents files and symbols grouped by package
+// SymbolGroupByPackage represents files and symbols grouped by package.
 type SymbolGroupByPackage struct {
 	// Package - пакет, в котором определен символ
 	Package string `json:"package" jsonschema:"Package where the symbols are defined"`
@@ -56,7 +56,7 @@ type SymbolGroupByPackage struct {
 	Files []SymbolGroupByFile `json:"files" jsonschema:"List of files with symbols in this package"`
 }
 
-// SymbolInfo represents the core information about a symbol (without package/file details, since they're grouped)
+// SymbolInfo represents the core information about a symbol (without package/file details, since they're grouped).
 type SymbolInfo struct {
 	// Kind - тип символа (func, struct, interface, method и т.д.)
 	Kind string `json:"kind" jsonschema:"Symbol type (func, struct, interface, method, etc.)"`
@@ -152,7 +152,7 @@ type Import struct {
 	Line int `json:"line" jsonschema:"Line number of the import statement"`
 }
 
-// ImportInfo хранит данные об импорте без повторения файла
+// ImportInfo хранит данные об импорте без повторения файла.
 type ImportInfo struct {
 	// Path - путь импортированного пакета
 	Path string `json:"path" jsonschema:"Imported package path"`
@@ -160,7 +160,7 @@ type ImportInfo struct {
 	Line int `json:"line" jsonschema:"Line number of the import statement"`
 }
 
-// ImportGroupByFile объединяет импорты по файлам
+// ImportGroupByFile объединяет импорты по файлам.
 type ImportGroupByFile struct {
 	// File - файл, в котором объявлены импорты
 	File string `json:"file" jsonschema:"File that declares the imports"`
@@ -202,7 +202,7 @@ type InterfaceInfo struct {
 	Methods []InterfaceMethod `json:"methods" jsonschema:"List of methods defined in the interface"`
 }
 
-// InterfaceGroupByPackage объединяет интерфейсы по пакетам
+// InterfaceGroupByPackage объединяет интерфейсы по пакетам.
 type InterfaceGroupByPackage struct {
 	// Package - пакет, в котором определены интерфейсы
 	Package string `json:"package" jsonschema:"Package where interfaces are defined"`
@@ -224,7 +224,7 @@ type AnalyzeComplexityInput struct {
 	Dir string `json:"dir" jsonschema:"Root directory to scan for Go files"`
 }
 
-// FunctionComplexityGroupByFile represents symbols grouped by file within a package
+// FunctionComplexityGroupByFile represents symbols grouped by file within a package.
 type FunctionComplexityGroupByFile struct {
 	// File - файл, где определена функция
 	File string `json:"file" jsonschema:"File where the symbols are defined"`

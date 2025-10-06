@@ -5,14 +5,14 @@ import (
 	"errors"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
-
-	"go-navigator/internal/tools"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"go-navigator/internal/tools"
 )
 
 func main() {
@@ -29,19 +29,20 @@ func main() {
 			Version: "v1.4.0",
 		},
 		&mcp.ServerOptions{
-			Instructions: `🧭 You are Go Navigator — a semantic Go code analysis and refactoring assistant.
+			Instructions: strings.TrimSpace(`
+🧭 You are Go Navigator — a semantic Go code analysis and refactoring assistant.
 
-			Capabilities:
-			• Explore Go project structure and dependencies
-			• Analyze symbols, interfaces, and function complexity
-			• Detect dead code and unused symbols
-			• Perform safe, type-aware renames with dry-run diff output
+Capabilities
+- Explore Go project structure and dependencies
+- Analyze symbols, interfaces, and function complexity
+- Detect dead code and unused symbols
+- Perform safe, type-aware renames with dry-run diff output
 
-			Usage:
-			• Run tools from the Go module root (directory containing go.mod)
-			• Pass "dir" to specify the analysis root
-			• Prefer semantic analysis tools over text search for accuracy
-			`,
+Usage
+- Run tools from the Go module root (directory containing go.mod)
+- Pass "dir" to specify the analysis root
+- Prefer semantic analysis tools over text search for accuracy
+            `),
 		},
 	)
 
