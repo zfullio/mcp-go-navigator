@@ -16,7 +16,6 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/pmezard/go-difflib/difflib"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
 )
@@ -207,15 +206,9 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 			out.ChangedFiles = append(out.ChangedFiles, rel)
 
 			if input.DryRun {
-				diff := difflib.UnifiedDiff{
-					A:        difflib.SplitLines(string(origBytes)),
-					B:        difflib.SplitLines(string(newContent)),
-					FromFile: "a/" + rel,
-					ToFile:   "b/" + rel,
-					Context:  3,
-				}
-				text, _ := difflib.GetUnifiedDiffString(diff)
-				out.Diffs = append(out.Diffs, FileDiff{Path: rel, Diff: text})
+				diffText := diffFiles(origBytes, newContent, rel)
+
+				out.Diffs = append(out.Diffs, FileDiff{Path: rel, Diff: diffText})
 
 				continue
 			}
@@ -320,15 +313,8 @@ func ASTRewrite(ctx context.Context, req *mcp.CallToolRequest, input ASTRewriteI
 			totalChanges += changesInFile
 
 			if input.DryRun {
-				diff := difflib.UnifiedDiff{
-					A:        difflib.SplitLines(string(origBytes)),
-					B:        difflib.SplitLines(string(newContent)),
-					FromFile: "a/" + rel,
-					ToFile:   "b/" + rel,
-					Context:  3,
-				}
-				text, _ := difflib.GetUnifiedDiffString(diff)
-				out.Diffs = append(out.Diffs, FileDiff{Path: rel, Diff: text})
+				diffText := diffFiles(origBytes, newContent, rel)
+				out.Diffs = append(out.Diffs, FileDiff{Path: rel, Diff: diffText})
 			} else {
 				err := safeWriteFile(filename, newContent)
 				if err != nil {

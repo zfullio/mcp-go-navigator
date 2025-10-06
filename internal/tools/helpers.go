@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/pmezard/go-difflib/difflib"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -450,4 +451,17 @@ func exprString(e ast.Expr) string {
 	}
 
 	return buf.String()
+}
+
+func diffFiles(oldData, newData []byte, rel string) string {
+	diff := difflib.UnifiedDiff{
+		A:        difflib.SplitLines(string(oldData)),
+		B:        difflib.SplitLines(string(newData)),
+		FromFile: "a/" + rel,
+		ToFile:   "b/" + rel,
+		Context:  3,
+	}
+	text, _ := difflib.GetUnifiedDiffString(diff)
+
+	return text
 }
