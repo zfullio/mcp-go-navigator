@@ -592,8 +592,8 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 				diff := difflib.UnifiedDiff{
 					A:        difflib.SplitLines(string(origBytes)),
 					B:        difflib.SplitLines(string(newContent)),
-					FromFile: rel + " (old)",
-					ToFile:   rel + " (new)",
+					FromFile: "a/" + rel,
+					ToFile:   "b/" + rel,
 					Context:  3,
 				}
 				text, _ := difflib.GetUnifiedDiffString(diff)
@@ -1428,8 +1428,8 @@ func ASTRewrite(ctx context.Context, req *mcp.CallToolRequest, input ASTRewriteI
 				diff := difflib.UnifiedDiff{
 					A:        difflib.SplitLines(string(origBytes)),
 					B:        difflib.SplitLines(string(newContent)),
-					FromFile: rel + " (old)",
-					ToFile:   rel + " (new)",
+					FromFile: "a/" + rel,
+					ToFile:   "b/" + rel,
 					Context:  3,
 				}
 				text, _ := difflib.GetUnifiedDiffString(diff)
