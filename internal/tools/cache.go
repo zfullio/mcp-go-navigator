@@ -94,3 +94,77 @@ func isPackageModified(stored map[string]time.Time) bool {
 
 	return false
 }
+
+// FileLinesCacheItem represents a cached file lines entry with timestamp.
+type FileLinesCacheItem struct {
+	Lines      []string
+	LastAccess time.Time
+	ModTime    time.Time
+}
+
+var fileLinesCache = struct {
+	sync.RWMutex
+
+	data map[string]FileLinesCacheItem
+}{
+	data: make(map[string]FileLinesCacheItem),
+}
+
+// cleanupCache removes cache entries older than the specified duration.
+func cleanupCache(maxAge time.Duration) {
+	packageCache.Lock()
+	defer packageCache.Unlock()
+
+	now := time.Now()
+	for key, item := range packageCache.pkgs {
+		if now.Sub(item.LastAccess) > maxAge {
+			delete(packageCache.pkgs, key)
+		}
+	}
+}
+
+// startCacheCleanup starts a background goroutine that periodically cleans up old cache entries.
+func startCacheCleanup(interval time.Duration, maxAge time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			cleanupCache(maxAge)
+		}
+	}()
+}
+
+// FileLinesCacheCleanup removes old file lines cache entries.
+func cleanupFileLinesCache(maxAge time.Duration) {
+	fileLinesCache.Lock()
+	defer fileLinesCache.Unlock()
+
+	now := time.Now()
+	for key, item := range fileLinesCache.data {
+		if now.Sub(item.LastAccess) > maxAge {
+			delete(fileLinesCache.data, key)
+		}
+	}
+}
+
+// startFileLinesCacheCleanup starts a background goroutine that periodically cleans up old file lines cache entries.
+func startFileLinesCacheCleanup(interval time.Duration, maxAge time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			cleanupFileLinesCache(maxAge)
+		}
+	}()
+}
+
+// init initializes the cache cleanup processes.
+func init() {
+	// Clean up package cache entries older than 30 minutes every 10 minutes
+	startCacheCleanup(10*time.Minute, 30*time.Minute)
+
+	// Clean up file lines cache entries older than 30 minutes every 10 minutes
+	startFileLinesCacheCleanup(10*time.Minute, 30*time.Minute)
+}

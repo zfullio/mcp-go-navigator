@@ -404,7 +404,7 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 				}
 
 				snip := extractSnippet(lines, pos.Line)
-				appendReference(&out.References, input.Dir, pkg.Fset, absPath, pos.Line, snip)
+				appendReference(&out.References, input.Dir, absPath, pos.Line, snip)
 
 				return true
 			})
@@ -466,7 +466,7 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 //
 // Возвращает:
 //   - результат вызова инструмента MCP
-//   - результат переименования с информацией о измененных файлах
+//   - результат переименования с информацией об измененных файлах
 //   - ошибку, если произошла ошибка при загрузке пакетов или символ не найден
 func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSymbolInput) (
 	*mcp.CallToolResult,
@@ -1594,9 +1594,9 @@ func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput
 // ReadFile возвращает информацию о Go-файле: пакет, импорты, символы, количество строк и (опционально) исходный код.
 //
 // Режимы работы:
-//   - "raw"     — возвращает только исходный код и количество строк
+//   - "raw" — возвращает только исходный код и количество строк
 //   - "summary" — возвращает пакет, импорты, символы, количество строк (без исходника)
-//   - "ast"     — полный анализ AST, включая исходник и символы
+//   - "ast" — полный анализ AST, включая исходник и символы
 func ReadFile(ctx context.Context, req *mcp.CallToolRequest, input ReadFileInput) (
 	*mcp.CallToolResult,
 	ReadFileOutput,

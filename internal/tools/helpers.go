@@ -11,47 +11,37 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/go/packages"
 )
 
-// FileLinesCacheItem represents a cached file lines entry with timestamp.
-type FileLinesCacheItem struct {
-	Lines      []string
-	LastAccess time.Time
-}
-
-var fileLinesCache = struct {
-	sync.RWMutex
-
-	data map[string]FileLinesCacheItem
-}{
-	data: make(map[string]FileLinesCacheItem),
-}
-
 func getFileLines(fset *token.FileSet, file *ast.File) []string {
 	filename := fset.File(file.Pos()).Name()
 
-	// check cache
+	// Проверяем кеш
 	fileLinesCache.RLock()
 	item, ok := fileLinesCache.data[filename]
 	fileLinesCache.RUnlock()
 
 	if ok {
-		// Update last access time
-		fileLinesCache.Lock()
+		// Проверяем, не изменился ли файл на диске
+		if st, err := os.Stat(filename); err == nil {
+			if st.ModTime().Equal(item.ModTime) {
+				// Файл не менялся — возвращаем кеш
+				fileLinesCache.Lock()
 
-		item.LastAccess = time.Now()
-		fileLinesCache.data[filename] = item
-		fileLinesCache.Unlock()
+				item.LastAccess = time.Now()
+				fileLinesCache.data[filename] = item
+				fileLinesCache.Unlock()
 
-		return item.Lines
+				return item.Lines
+			}
+		}
 	}
 
-	// load file
+	// Файл изменён или не закеширован — читаем заново
 	src, err := os.ReadFile(filename)
 	if err != nil {
 		return []string{}
@@ -59,11 +49,16 @@ func getFileLines(fset *token.FileSet, file *ast.File) []string {
 
 	lines := strings.Split(string(src), "\n")
 
-	// cache it with access time
+	var modTime time.Time
+	if st, err := os.Stat(filename); err == nil {
+		modTime = st.ModTime()
+	}
+
 	fileLinesCache.Lock()
 	fileLinesCache.data[filename] = FileLinesCacheItem{
 		Lines:      lines,
 		LastAccess: time.Now(),
+		ModTime:    modTime,
 	}
 	fileLinesCache.Unlock()
 
@@ -237,65 +232,6 @@ func interfaceExtends(impl, target *types.Interface) bool {
 	return true
 }
 
-// cleanupCache removes cache entries older than the specified duration.
-func cleanupCache(maxAge time.Duration) {
-	packageCache.Lock()
-	defer packageCache.Unlock()
-
-	now := time.Now()
-	for key, item := range packageCache.pkgs {
-		if now.Sub(item.LastAccess) > maxAge {
-			delete(packageCache.pkgs, key)
-		}
-	}
-}
-
-// startCacheCleanup starts a background goroutine that periodically cleans up old cache entries.
-func startCacheCleanup(interval time.Duration, maxAge time.Duration) {
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			cleanupCache(maxAge)
-		}
-	}()
-}
-
-// FileLinesCacheCleanup removes old file lines cache entries.
-func cleanupFileLinesCache(maxAge time.Duration) {
-	fileLinesCache.Lock()
-	defer fileLinesCache.Unlock()
-
-	now := time.Now()
-	for key, item := range fileLinesCache.data {
-		if now.Sub(item.LastAccess) > maxAge {
-			delete(fileLinesCache.data, key)
-		}
-	}
-}
-
-// startFileLinesCacheCleanup starts a background goroutine that periodically cleans up old file lines cache entries.
-func startFileLinesCacheCleanup(interval time.Duration, maxAge time.Duration) {
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			cleanupFileLinesCache(maxAge)
-		}
-	}()
-}
-
-// init initializes the cache cleanup processes.
-func init() {
-	// Clean up package cache entries older than 30 minutes every 10 minutes
-	startCacheCleanup(10*time.Minute, 30*time.Minute)
-
-	// Clean up file lines cache entries older than 30 minutes every 10 minutes
-	startFileLinesCacheCleanup(10*time.Minute, 30*time.Minute)
-}
-
 func findTargetObject(ctx context.Context, pkgs []*packages.Package, ident, kind string) types.Object {
 	for _, pkg := range pkgs {
 		if shouldStop(ctx) {
@@ -342,7 +278,7 @@ func appendDefinition(out *[]Definition, dir string, fset *token.FileSet, pos to
 	*out = append(*out, Definition{File: rel, Line: posn.Line, Snippet: snippet})
 }
 
-func appendReference(out *[]Reference, dir string, fset *token.FileSet, absPath string, line int, snippet string) {
+func appendReference(out *[]Reference, dir string, absPath string, line int, snippet string) {
 	rel, _ := filepath.Rel(dir, absPath)
 	*out = append(*out, Reference{File: rel, Line: line, Snippet: snippet})
 }
