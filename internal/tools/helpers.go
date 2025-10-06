@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,59 +17,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/go/packages"
 )
-
-// PackageCacheItem represents a cached package with its timestamp.
-type PackageCacheItem struct {
-	Packages   []*packages.Package
-	LastAccess time.Time
-}
-
-var packageCache = struct {
-	sync.RWMutex
-
-	pkgs map[string]PackageCacheItem
-}{pkgs: make(map[string]PackageCacheItem)}
-
-// loadPackagesWithCache loads packages with directory and mode-based caching.
-func loadPackagesWithCache(ctx context.Context, dir string, mode packages.LoadMode) ([]*packages.Package, error) {
-	cacheKey := dir + "|" + strconv.FormatInt(int64(mode), 10)
-
-	packageCache.RLock()
-	item, exists := packageCache.pkgs[cacheKey]
-	packageCache.RUnlock()
-
-	if exists {
-		// Update last access time
-		packageCache.Lock()
-
-		item.LastAccess = time.Now()
-		packageCache.pkgs[cacheKey] = item
-		packageCache.Unlock()
-
-		return item.Packages, nil
-	}
-
-	cfg := &packages.Config{
-		Mode:    mode,
-		Dir:     dir,
-		Context: ctx,
-	}
-
-	pkgs, err := packages.Load(cfg, "./...")
-	if err != nil {
-		return nil, err
-	}
-
-	// Cache the packages with access time
-	packageCache.Lock()
-	packageCache.pkgs[cacheKey] = PackageCacheItem{
-		Packages:   pkgs,
-		LastAccess: time.Now(),
-	}
-	packageCache.Unlock()
-
-	return pkgs, nil
-}
 
 // FileLinesCacheItem represents a cached file lines entry with timestamp.
 type FileLinesCacheItem struct {
@@ -558,6 +504,7 @@ func receiverName(fd *ast.FuncDecl) string {
 // exprString возвращает строковое представление типа выражения AST (для полей структуры).
 func exprString(e ast.Expr) string {
 	var buf bytes.Buffer
+
 	err := format.Node(&buf, token.NewFileSet(), e)
 	if err != nil {
 		return ""

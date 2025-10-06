@@ -1561,6 +1561,7 @@ func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput
 				endPos := fset.Position(fd.End())
 
 				var buf bytes.Buffer
+
 				err := format.Node(&buf, fset, fd)
 				if err != nil {
 					logError("ReadFunc", err, "failed to format function")
