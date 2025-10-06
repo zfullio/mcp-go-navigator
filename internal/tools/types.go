@@ -152,10 +152,26 @@ type Import struct {
 	Line int `json:"line" jsonschema:"Line number of the import statement"`
 }
 
+// ImportInfo хранит данные об импорте без повторения файла
+type ImportInfo struct {
+	// Path - путь импортированного пакета
+	Path string `json:"path" jsonschema:"Imported package path"`
+	// Line - номер строки оператора импорта
+	Line int `json:"line" jsonschema:"Line number of the import statement"`
+}
+
+// ImportGroupByFile объединяет импорты по файлам
+type ImportGroupByFile struct {
+	// File - файл, в котором объявлены импорты
+	File string `json:"file" jsonschema:"File that declares the imports"`
+	// Imports - список импортов в файле
+	Imports []ImportInfo `json:"imports" jsonschema:"List of imports declared in the file"`
+}
+
 // ListImportsOutput содержит результаты работы инструмента ListImports.
 type ListImportsOutput struct {
-	// Imports - все импорты, найденные в просканированных Go-файлах
-	Imports []Import `json:"imports" jsonschema:"All imports found in scanned Go files"`
+	// Imports - импорты, сгруппированные по файлам (экономия токенов)
+	Imports []ImportGroupByFile `json:"imports,omitempty" jsonschema:"Imports grouped by file"`
 }
 
 // ------------------ list interfaces ------------------
@@ -186,10 +202,18 @@ type InterfaceInfo struct {
 	Methods []InterfaceMethod `json:"methods" jsonschema:"List of methods defined in the interface"`
 }
 
+// InterfaceGroupByPackage объединяет интерфейсы по пакетам
+type InterfaceGroupByPackage struct {
+	// Package - пакет, в котором определены интерфейсы
+	Package string `json:"package" jsonschema:"Package where interfaces are defined"`
+	// Interfaces - список интерфейсов в пакете
+	Interfaces []InterfaceInfo `json:"interfaces" jsonschema:"Interfaces declared within the package"`
+}
+
 // ListInterfacesOutput содержит результаты работы инструмента ListInterfaces.
 type ListInterfacesOutput struct {
-	// Interfaces - все интерфейсы, найденные в просканированных Go-файлах
-	Interfaces []InterfaceInfo `json:"interfaces" jsonschema:"All interfaces found in scanned Go files"`
+	// Interfaces - интерфейсы, сгруппированные по пакетам
+	Interfaces []InterfaceGroupByPackage `json:"interfaces,omitempty" jsonschema:"Interfaces grouped by package"`
 }
 
 // ------------------ analyze complexity ------------------

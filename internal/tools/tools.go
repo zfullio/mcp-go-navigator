@@ -271,6 +271,67 @@ func groupFunctionComplexityByFile(functions []FunctionComplexity) []FunctionCom
 	return result
 }
 
+// groupImportsByFile объединяет импорты по файлам для уменьшения дублирования
+func groupImportsByFile(imports []Import) []ImportGroupByFile {
+	if len(imports) == 0 {
+		return nil
+	}
+
+	fileMap := make(map[string][]ImportInfo)
+
+	for _, imp := range imports {
+		info := ImportInfo{Path: imp.Path, Line: imp.Line}
+		fileMap[imp.File] = append(fileMap[imp.File], info)
+	}
+
+	var result []ImportGroupByFile
+	for fileName, infos := range fileMap {
+		sort.Slice(infos, func(i, j int) bool {
+			if infos[i].Path == infos[j].Path {
+				return infos[i].Line < infos[j].Line
+			}
+
+			return infos[i].Path < infos[j].Path
+		})
+
+		result = append(result, ImportGroupByFile{
+			File:    fileName,
+			Imports: infos,
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].File < result[j].File
+	})
+
+	return result
+}
+
+// groupInterfacesByPackage объединяет интерфейсы по пакетам
+func groupInterfacesByPackage(data map[string][]InterfaceInfo) []InterfaceGroupByPackage {
+	if len(data) == 0 {
+		return nil
+	}
+
+	var result []InterfaceGroupByPackage
+	for pkgName, interfaces := range data {
+		sort.Slice(interfaces, func(i, j int) bool {
+			return interfaces[i].Name < interfaces[j].Name
+		})
+
+		result = append(result, InterfaceGroupByPackage{
+			Package:    pkgName,
+			Interfaces: interfaces,
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Package < result[j].Package
+	})
+
+	return result
+}
+
 // FindReferences находит все ссылки и использования идентификатора с использованием семантического анализа go/types.
 //
 // Параметры:
@@ -574,7 +635,7 @@ func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImport
 
 	defer func() { logEnd("ListImports", start, len(out.Imports)) }()
 
-	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles
+	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedName
 
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
@@ -582,6 +643,8 @@ func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImport
 
 		return fail(out, err)
 	}
+
+	flatImports := make([]Import, 0)
 
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Syntax {
@@ -591,10 +654,12 @@ func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImport
 			for _, imp := range file.Imports {
 				path := strings.Trim(imp.Path.Value, `"`)
 				pos := pkg.Fset.Position(imp.Pos())
-				out.Imports = append(out.Imports, Import{Path: path, File: relPath, Line: pos.Line})
+				flatImports = append(flatImports, Import{Path: path, File: relPath, Line: pos.Line})
 			}
 		}
 	}
+
+	out.Imports = groupImportsByFile(flatImports)
 
 	return nil, out, nil
 }
@@ -629,10 +694,25 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 		return fail(out, err)
 	}
 
+	interfacesByPackage := make(map[string][]InterfaceInfo)
+
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Syntax {
 			absPath := pkg.Fset.File(file.Pos()).Name()
 			relPath, _ := filepath.Rel(input.Dir, absPath)
+
+			pkgKey := pkg.PkgPath
+			if pkgKey == "" {
+				pkgKey = pkg.Name
+			}
+
+			if pkgKey == "" && file.Name != nil {
+				pkgKey = file.Name.Name
+			}
+
+			if pkgKey == "" {
+				pkgKey = "(unknown)"
+			}
 
 			ast.Inspect(file, func(n ast.Node) bool {
 				ts, ok := n.(*ast.TypeSpec)
@@ -656,13 +736,15 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 						}
 					}
 
-					out.Interfaces = append(out.Interfaces, ifInfo)
+					interfacesByPackage[pkgKey] = append(interfacesByPackage[pkgKey], ifInfo)
 				}
 
 				return true
 			})
 		}
 	}
+
+	out.Interfaces = groupInterfacesByPackage(interfacesByPackage)
 
 	return nil, out, nil
 }

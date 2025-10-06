@@ -192,25 +192,32 @@ func TestListImports(t *testing.T) {
 	}
 
 	if len(out.Imports) == 0 {
-		t.Fatalf("expected at least 1 import, got 0")
+		t.Fatalf("expected at least 1 grouped import, got 0")
 	}
 
 	foundFmt := false
 	foundStrings := false
 
-	for _, imp := range out.Imports {
-		if imp.Path == "fmt" {
-			foundFmt = true
+	for _, group := range out.Imports {
+		if group.File == "" {
+			t.Errorf("expected file name in grouped imports, got empty string")
 		}
 
-		if imp.Path == "strings" {
-			foundStrings = true
+		for _, imp := range group.Imports {
+			if imp.Path == "fmt" {
+				foundFmt = true
+			}
+
+			if imp.Path == "strings" {
+				foundStrings = true
+			}
 		}
 	}
 
 	if !foundFmt || !foundStrings {
 		t.Errorf("expected to find imports fmt and strings, got %+v", out.Imports)
 	}
+
 }
 
 func TestListInterfaces(t *testing.T) {
@@ -222,14 +229,23 @@ func TestListInterfaces(t *testing.T) {
 	}
 
 	if len(out.Interfaces) == 0 {
-		t.Fatalf("expected at least 1 interface, got 0")
+		t.Fatalf("expected at least 1 grouped interface, got 0")
 	}
 
 	foundStorage := false
 	foundSave := false
 	foundLoad := false
 
-	for _, iface := range out.Interfaces {
+	var aggregated []tools.InterfaceInfo
+	for _, group := range out.Interfaces {
+		if group.Package == "" {
+			t.Errorf("expected package name in grouped interfaces, got empty string")
+		}
+
+		aggregated = append(aggregated, group.Interfaces...)
+	}
+
+	for _, iface := range aggregated {
 		if iface.Name == "Storage" {
 			foundStorage = true
 
@@ -256,6 +272,7 @@ func TestListInterfaces(t *testing.T) {
 	if !foundLoad {
 		t.Errorf("expected to find method Load in Storage, got %+v", out.Interfaces)
 	}
+
 }
 
 func TestListInterfaces_HandlesEmptyInterface(t *testing.T) {
@@ -266,13 +283,15 @@ func TestListInterfaces_HandlesEmptyInterface(t *testing.T) {
 		t.Fatalf("ListInterfaces error: %v", err)
 	}
 
-	for _, iface := range out.Interfaces {
-		if iface.Name == "Empty" {
-			if len(iface.Methods) != 0 {
-				t.Fatalf("expected Empty interface to have zero methods, got %d", len(iface.Methods))
-			}
+	for _, group := range out.Interfaces {
+		for _, iface := range group.Interfaces {
+			if iface.Name == "Empty" {
+				if len(iface.Methods) != 0 {
+					t.Fatalf("expected Empty interface to have zero methods, got %d", len(iface.Methods))
+				}
 
-			return
+				return
+			}
 		}
 	}
 
