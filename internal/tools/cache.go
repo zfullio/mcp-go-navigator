@@ -32,9 +32,9 @@ func loadPackagesWithCache(ctx context.Context, dir string, mode packages.LoadMo
 	item, exists := packageCache.pkgs[cacheKey]
 	packageCache.RUnlock()
 
-	// Проверяем, не изменились ли файлы
+	// Check if files have changed
 	if exists && !isPackageModified(item.FileModTime) {
-		// Обновляем время доступа
+		// Update access time
 		packageCache.Lock()
 
 		item.LastAccess = time.Now()
@@ -44,7 +44,7 @@ func loadPackagesWithCache(ctx context.Context, dir string, mode packages.LoadMo
 		return item.Packages, nil
 	}
 
-	// Если кеш отсутствует или устарел — перезагружаем
+	// If cache is missing or outdated - reload
 	cfg := &packages.Config{
 		Mode:    mode,
 		Dir:     dir,
@@ -56,7 +56,7 @@ func loadPackagesWithCache(ctx context.Context, dir string, mode packages.LoadMo
 		return nil, err
 	}
 
-	// Сохраняем времена модификации файлов
+	// Save file modification times
 	fileModTimes := make(map[string]time.Time)
 
 	for _, pkg := range pkgs {
@@ -83,7 +83,7 @@ func isPackageModified(stored map[string]time.Time) bool {
 	for path, oldTime := range stored {
 		st, err := os.Stat(path)
 		if err != nil {
-			// Если файл удалён — считаем, что пакет изменился
+			// If file is deleted - consider that the package has changed
 			return true
 		}
 

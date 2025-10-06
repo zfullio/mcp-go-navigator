@@ -20,16 +20,16 @@ import (
 func getFileLines(fset *token.FileSet, file *ast.File) []string {
 	filename := fset.File(file.Pos()).Name()
 
-	// Проверяем кеш
+	// Check cache
 	fileLinesCache.RLock()
 	item, ok := fileLinesCache.data[filename]
 	fileLinesCache.RUnlock()
 
 	if ok {
-		// Проверяем, не изменился ли файл на диске
+		// Check if the file has changed on disk
 		if st, err := os.Stat(filename); err == nil {
 			if st.ModTime().Equal(item.ModTime) {
-				// Файл не менялся — возвращаем кеш
+				// File hasn't changed - return cache
 				fileLinesCache.Lock()
 
 				item.LastAccess = time.Now()
@@ -41,7 +41,7 @@ func getFileLines(fset *token.FileSet, file *ast.File) []string {
 		}
 	}
 
-	// Файл изменён или не закеширован — читаем заново
+	// File changed or not cached - read again
 	src, err := os.ReadFile(filename)
 	if err != nil {
 		return []string{}
@@ -126,24 +126,24 @@ func safeWriteFile(path string, data []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// isDeadCandidate определяет, стоит ли вообще рассматривать объект как "мёртвый" кандидат.
+// isDeadCandidate determines whether to consider an object as a "dead" candidate at all.
 func isDeadCandidate(ident *ast.Ident, obj types.Object) bool {
 	name := ident.Name
 
-	// --- очевидные исключения ---
+	// --- obvious exclusions ---
 	if name == "_" || name == "init" || name == "main" {
 		return false
 	}
 
 	if ast.IsExported(name) {
-		return false // экспортируемые символы не считаем "мёртвыми"
+		return false // don't consider exported symbols as "dead"
 	}
 
 	if strings.HasSuffix(name, "_test") {
-		return false // тестовые функции
+		return false // test functions
 	}
 
-	// --- интересуют только "реальные" сущности ---
+	// --- only interested in "real" entities ---
 	switch obj.(type) {
 	case *types.Var, *types.Const, *types.TypeName, *types.Func:
 		// ok
@@ -151,15 +151,15 @@ func isDeadCandidate(ident *ast.Ident, obj types.Object) bool {
 		return false
 	}
 
-	// --- уточняем для функций ---
+	// --- refine for functions ---
 	if fn, ok := obj.(*types.Func); ok {
 		if sig, ok := fn.Type().(*types.Signature); ok && sig.Recv() != nil {
-			// это метод
-			// неэкспортируемые методы анализируем, экспортируемые — пропускаем
+			// this is a method
+			// analyze unexported methods, skip exported ones
 			if ast.IsExported(fn.Name()) {
 				return false
 			}
-			// иначе — кандидат
+			// otherwise - candidate
 		}
 	}
 
@@ -413,9 +413,9 @@ func compareExprSlices(a, b []ast.Expr) bool {
 	return true
 }
 
-// receiverName возвращает имя типа-получателя для метода, если он присутствует.
-// Например, для `func (s *TaskService) List()` вернёт "TaskService".
-// Если функция не является методом, возвращает пустую строку.
+// receiverName returns the receiver type name for a method if present.
+// For example, for `func (s *TaskService) List()` returns "TaskService".
+// If the function is not a method, returns an empty string.
 func receiverName(fd *ast.FuncDecl) string {
 	if fd.Recv == nil || len(fd.Recv.List) == 0 {
 		return ""
@@ -425,19 +425,19 @@ func receiverName(fd *ast.FuncDecl) string {
 
 	switch expr := recvType.(type) {
 	case *ast.StarExpr:
-		// Указатель на тип, например (*TaskService)
+		// Pointer to type, e.g. (*TaskService)
 		if ident, ok := expr.X.(*ast.Ident); ok {
 			return ident.Name
 		}
 	case *ast.Ident:
-		// Прямой тип без указателя, например TaskService
+		// Direct type without pointer, e.g. TaskService
 		return expr.Name
 	}
 
 	return ""
 }
 
-// exprString возвращает строковое представление типа выражения AST (для полей структуры).
+// exprString returns the string representation of an AST expression type (for struct fields).
 func exprString(e ast.Expr) string {
 	var buf bytes.Buffer
 

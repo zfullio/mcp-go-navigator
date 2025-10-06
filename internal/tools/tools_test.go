@@ -147,7 +147,7 @@ func TestRenameSymbol(t *testing.T) {
 
 	dir := testDir()
 
-	// Создаём копию testdata, чтобы не портить исходники
+	// Create a copy of testdata to avoid modifying the sources
 	tmpDir := filepath.Join(os.TempDir(), "sample_copy")
 	_ = os.RemoveAll(tmpDir)
 
@@ -171,7 +171,7 @@ func TestRenameSymbol(t *testing.T) {
 		t.Fatalf("expected changed files, got 0")
 	}
 
-	// Проверяем, что Foo реально заменён на MyFoo
+	// Verify that Foo is actually replaced with MyFoo
 	for _, f := range out.ChangedFiles {
 		full := filepath.Join(tmpDir, f) // ✅ путь относительно tmpDir
 
@@ -507,7 +507,7 @@ func BenchmarkAnalyzeComplexity(b *testing.B) {
 }
 
 func BenchmarkComplexityVisitor(b *testing.B) {
-	// Берём один конкретный файл, чтобы измерять только визитор
+	// Take one specific file to measure only the visitor
 	dir := benchDir()
 	fset := token.NewFileSet()
 	file := filepath.Join(dir, "complex.go") // возьми тестовый файл с функциями
