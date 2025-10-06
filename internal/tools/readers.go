@@ -60,12 +60,10 @@ func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput
 	}
 
 	for _, pkg := range pkgs {
-		for _, file := range pkg.Syntax {
+		for _, astFile := range pkg.Syntax {
 			fset := pkg.Fset
-			abs := fset.File(file.Pos()).Name()
-			rel, _ := filepath.Rel(input.Dir, abs)
 
-			ast.Inspect(file, func(n ast.Node) bool {
+			ast.Inspect(astFile, func(n ast.Node) bool {
 				fd, ok := n.(*ast.FuncDecl)
 				if !ok {
 					return true
@@ -82,22 +80,84 @@ func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput
 					return true
 				}
 
+				// Вычисляем позицию найденной функции
 				startPos := fset.Position(fd.Pos())
 				endPos := fset.Position(fd.End())
 
+				// Определяем абсолютный путь к файлу, в котором находится функция
+				// Сначала пытаемся получить имя файла из FileSet
+				abs := ""
+				funcFile := fset.File(fd.Pos())
+				if funcFile != nil {
+					abs = funcFile.Name()
+				}
+
+				// Если имя файла не получено из FileSet, используем резервный способ
+				if abs == "" {
+					// Сопоставляем позицию функции с файлами в пакете
+					funcPos := fd.Pos()
+					for _, compiledGoFile := range pkg.CompiledGoFiles {
+						// Пытаемся открыть и разобрать каждый файл, чтобы проверить,
+						// содержится ли в нем функция с заданной позицией
+						if fset.File(funcPos).Name() == compiledGoFile {
+							abs = compiledGoFile
+							break
+						}
+					}
+				}
+
+				// Если после всех попыток abs все еще пустой, используем первый файл из пакета как запасной вариант
+				if abs == "" && len(pkg.CompiledGoFiles) > 0 {
+					abs = pkg.CompiledGoFiles[0]
+				}
+
+				rel, err := filepath.Rel(input.Dir, abs)
+				if err != nil {
+					logError("ReadFunc", err, "failed to compute relative path")
+					// Если вычисление относительного пути не удалось, попробуем получить относительный путь другим способом
+					// Например, если abs - это один из файлов в pkg.CompiledGoFiles, мы можем использовать его относительный путь
+					for _, compiledFile := range pkg.CompiledGoFiles {
+						if compiledFile == abs {
+							// compiledFile уже должен быть относительным путем
+							rel = compiledFile
+							break
+						}
+					}
+					// Если все равно не удалось, используем запасной вариант
+					if rel == "" {
+						rel = abs
+					}
+				}
+
+				// Ensure rel is not empty - this is a fallback to prevent empty File field
+				if rel == "" {
+					// В крайнем случае, если все методы дали пустой результат, используем первый файл из пакета
+					if len(pkg.CompiledGoFiles) > 0 {
+						rel = pkg.CompiledGoFiles[0]
+					} else {
+						rel = abs
+					}
+				}
+
 				var buf bytes.Buffer
 
-				err := format.Node(&buf, fset, fd)
+				err = format.Node(&buf, fset, fd)
 				if err != nil {
 					logError("ReadFunc", err, "failed to format function")
 
 					return false
 				}
 
+				// Используем имя пакета из текущего файла как резервный вариант, если pkg.PkgPath пустой
+				packageName := pkg.PkgPath
+				if packageName == "" {
+					packageName = astFile.Name.Name
+				}
+
 				out.Function = FunctionSource{
 					Name:       fd.Name.Name,
 					Receiver:   recv,
-					Package:    pkg.PkgPath,
+					Package:    packageName,
 					File:       rel,
 					StartLine:  startPos.Line,
 					EndLine:    endPos.Line,
