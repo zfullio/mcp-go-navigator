@@ -311,8 +311,8 @@ type DeadCodeOutput struct {
 type RenameSymbolInput struct {
 	// Dir - root directory of the Go module
 	Dir string `json:"dir" jsonschema:"Root directory of the Go module"`
-	// OldName - current symbol name to rename
-	OldName string `json:"oldName" jsonschema:"Current symbol name to rename"`
+	// OldName - current symbol name to rename; supports format 'TypeName.MethodName' for methods
+	OldName string `json:"oldName" jsonschema:"Current symbol name to rename; supports format 'TypeName.MethodName' for methods"`
 	// NewName - new symbol name to apply
 	NewName string `json:"newName" jsonschema:"New symbol name to apply"`
 	// Kind - symbol kind: func, var, const, type, package

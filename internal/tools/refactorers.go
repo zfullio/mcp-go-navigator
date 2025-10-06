@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pmezard/go-difflib/difflib"
@@ -66,23 +67,71 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 			return fail(out, context.Canceled)
 		}
 
-		// Look in scope first
-		scope := pkg.Types.Scope()
-		if scope != nil {
-			if obj := scope.Lookup(input.OldName); obj != nil {
-				targetObj = obj
+		// Check if OldName is in the format "TypeName.MethodName"
+		var typeName, methodName string
 
-				break
+		if strings.Contains(input.OldName, ".") {
+			parts := strings.SplitN(input.OldName, ".", 2)
+			typeName, methodName = parts[0], parts[1]
+
+			// Find the type in the package scope
+			typeObj := pkg.Types.Scope().Lookup(typeName)
+			if typeObj != nil {
+				// Get the underlying type
+				namedType, ok := typeObj.Type().(*types.Named)
+				if !ok {
+					// If it's not a Named type, try to get the type directly
+					// This can happen if the type alias is used or if typeObj.Type() is directly a concrete type
+					// But for methods, we need a Named type or a struct/interface
+					// Let's use the type we got
+					namedType = nil
+					if concreteType := typeObj.Type(); concreteType != nil {
+						// Use concreteType for LookupFieldOrMethod
+						// addressable=true to also find methods defined on pointer receivers
+						obj, _, _ := types.LookupFieldOrMethod(concreteType, true, pkg.Types, methodName)
+						if obj != nil {
+							if input.Kind == "" || objStringKind(obj) == input.Kind {
+								targetObj = obj
+
+								break
+							}
+						}
+					}
+				} else {
+					// Use namedType for LookupFieldOrMethod
+					// addressable=true to also find methods defined on pointer receivers
+					obj, _, _ := types.LookupFieldOrMethod(namedType, true, pkg.Types, methodName)
+					if obj != nil {
+						if input.Kind == "" || objStringKind(obj) == input.Kind {
+							targetObj = obj
+
+							break
+						}
+					}
+				}
 			}
 		}
 
-		// Then look in defs
-		for _, def := range pkg.TypesInfo.Defs {
-			if def != nil && def.Name() == input.OldName {
-				if input.Kind == "" || objStringKind(def) == input.Kind {
-					targetObj = def
+		// If we haven't found the target object yet, use the existing logic
+		if targetObj == nil {
+			// Look in scope first
+			scope := pkg.Types.Scope()
+			if scope != nil {
+				if obj := scope.Lookup(input.OldName); obj != nil {
+					targetObj = obj
 
 					break
+				}
+			}
+
+			// Then look in defs
+			for _, def := range pkg.TypesInfo.Defs {
+				if def != nil && def.Name() == input.OldName {
+					if input.Kind == "" || objStringKind(def) == input.Kind {
+						targetObj = def
+
+						break
+					}
 				}
 			}
 		}
@@ -110,6 +159,13 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 			origBytes, _ := os.ReadFile(filename)
 			changed := false
 
+			nameToMatch := input.OldName
+			if strings.Contains(input.OldName, ".") {
+				// If using TypeName.MethodName format, extract just the method name
+				parts := strings.SplitN(input.OldName, ".", 2)
+				nameToMatch = parts[1] // Just the method name
+			}
+
 			ast.Inspect(file, func(n ast.Node) bool {
 				if shouldStop(ctx) {
 					return false
@@ -117,7 +173,7 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 
 				// Only rename identifiers that refer to our target object
 				if ident, ok := n.(*ast.Ident); ok {
-					if ident.Name == input.OldName {
+					if ident.Name == nameToMatch {
 						obj := pkg.TypesInfo.ObjectOf(ident)
 						if obj != nil && sameObject(obj, targetObj) {
 							ident.Name = input.NewName

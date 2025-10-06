@@ -5,9 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"go-navigator/internal/tools"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go-navigator/internal/tools"
 )
 
 func TestFindReferences(t *testing.T) {

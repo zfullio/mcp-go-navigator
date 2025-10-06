@@ -8,9 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"go-navigator/internal/tools"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go-navigator/internal/tools"
 )
 
 func TestRenameSymbol(t *testing.T) {
@@ -143,6 +142,51 @@ func TestRenameSymbol_DryRun(t *testing.T) {
 
 	if string(originalContent) != string(contentAfterDryRun) {
 		t.Errorf("file content changed during dry run, expected no changes")
+	}
+}
+
+func TestRenameSymbol_WithMethodFormat(t *testing.T) {
+	t.Parallel()
+
+	dir := testDir()
+	tmpDir := t.TempDir()
+
+	if err := copyDir(dir, tmpDir); err != nil {
+		t.Fatalf("copyDir error: %v", err)
+	}
+
+	// Тестируем переименование существующего метода с использованием формата TypeName.MethodName
+	// В foo.go есть тип Foo с методом DoSomething()
+	in := tools.RenameSymbolInput{
+		Dir:     tmpDir,
+		OldName: "Foo.DoSomething", // Используем формат TypeName.MethodName
+		NewName: "Process",
+	}
+
+	_, out, err := tools.RenameSymbol(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("RenameSymbol error: %v", err)
+	}
+
+	if len(out.ChangedFiles) == 0 {
+		t.Fatalf("expected changed files, got 0")
+	}
+
+	// Проверяем, что файлы из testdata содержат переименованный метод
+	fooFilePath := filepath.Join(tmpDir, "foo.go")
+
+	fileContent, err := os.ReadFile(fooFilePath)
+	if err != nil {
+		t.Fatalf("failed to read foo.go: %v", err)
+	}
+
+	contentStr := string(fileContent)
+	if !strings.Contains(contentStr, "Process") {
+		t.Errorf("expected file to contain 'Process' after rename, but it doesn't")
+	}
+
+	if strings.Contains(contentStr, "DoSomething") {
+		t.Errorf("expected 'DoSomething' method to be renamed, but it still exists")
 	}
 }
 
