@@ -40,10 +40,38 @@ type Symbol struct {
 	Exported bool `json:"exported" jsonschema:"True if the symbol is exported (starts with capital letter)"`
 }
 
+// SymbolGroupByFile represents symbols grouped by file within a package
+type SymbolGroupByFile struct {
+	// File - файл, в котором определен символ
+	File string `json:"file" jsonschema:"File where the symbols are defined"`
+	// Symbols - список символов в этом файле
+	Symbols []SymbolInfo `json:"symbols" jsonschema:"List of symbols in this file"`
+}
+
+// SymbolGroupByPackage represents files and symbols grouped by package
+type SymbolGroupByPackage struct {
+	// Package - пакет, в котором определен символ
+	Package string `json:"package" jsonschema:"Package where the symbols are defined"`
+	// Files - список файлов с символами в этом пакете
+	Files []SymbolGroupByFile `json:"files" jsonschema:"List of files with symbols in this package"`
+}
+
+// SymbolInfo represents the core information about a symbol (without package/file details, since they're grouped)
+type SymbolInfo struct {
+	// Kind - тип символа (func, struct, interface, method и т.д.)
+	Kind string `json:"kind" jsonschema:"Symbol type (func, struct, interface, method, etc.)"`
+	// Name - имя символа
+	Name string `json:"name" jsonschema:"Symbol name"`
+	// Line - номер строки в файле
+	Line int `json:"line" jsonschema:"Line number in the file"`
+	// Exported - true, если символ экспортируется (начинается с заглавной буквы)
+	Exported bool `json:"exported" jsonschema:"True if the symbol is exported (starts with capital letter)"`
+}
+
 // ListSymbolsOutput содержит результаты работы инструмента ListSymbols.
 type ListSymbolsOutput struct {
-	// Symbols - все найденные символы в указанном пакете
-	Symbols []Symbol `json:"symbols" jsonschema:"All discovered symbols within the specified package"`
+	// GroupedSymbols - найденные символы, сгруппированные по пакетам и файлам (альтернативный формат для экономии токенов)
+	GroupedSymbols []SymbolGroupByPackage `json:"groupedSymbols,omitempty" jsonschema:"Symbols grouped by package and file"`
 }
 
 // ------------------ find references ------------------
@@ -172,6 +200,14 @@ type AnalyzeComplexityInput struct {
 	Dir string `json:"dir" jsonschema:"Root directory to scan for Go files"`
 }
 
+// FunctionComplexityGroupByFile represents symbols grouped by file within a package
+type FunctionComplexityGroupByFile struct {
+	// File - файл, где определена функция
+	File string `json:"file" jsonschema:"File where the symbols are defined"`
+	// Symbols - список символов в этом файле
+	Functions []FunctionComplexityInfo `json:"functions" jsonschema:"Calculated complexity metrics for all functions"`
+}
+
 // FunctionComplexity представляет метрики сложности функции.
 type FunctionComplexity struct {
 	// Name - имя функции
@@ -188,10 +224,23 @@ type FunctionComplexity struct {
 	Cyclomatic int `json:"cyclomatic" jsonschema:"Cyclomatic complexity value"`
 }
 
+type FunctionComplexityInfo struct {
+	// Name - имя функции
+	Name string `json:"name" jsonschema:"Function name"`
+	// Line - номер строки функции
+	Line int `json:"line" jsonschema:"Line number of the function"`
+	// Lines - общее количество строк в функции
+	Lines int `json:"lines" jsonschema:"Total number of lines in the function"`
+	// Nesting - максимальная глубина вложенности
+	Nesting int `json:"nesting" jsonschema:"Maximum nesting depth"`
+	// Cyclomatic - цикломатическая сложность
+	Cyclomatic int `json:"cyclomatic" jsonschema:"Cyclomatic complexity value"`
+}
+
 // AnalyzeComplexityOutput содержит результаты работы инструмента AnalyzeComplexity.
 type AnalyzeComplexityOutput struct {
 	// Functions - рассчитанные метрики сложности для всех функций
-	Functions []FunctionComplexity `json:"functions" jsonschema:"Calculated complexity metrics for all functions"`
+	Functions []FunctionComplexityGroupByFile `json:"functions" jsonschema:"Calculated complexity metrics for functions"`
 }
 
 // ------------------ dead code ------------------

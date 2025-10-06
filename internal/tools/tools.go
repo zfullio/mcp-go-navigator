@@ -80,9 +80,9 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 	error,
 ) {
 	start := logStart("ListSymbols", map[string]string{"dir": input.Dir})
-	out := ListSymbolsOutput{Symbols: []Symbol{}}
+	symbols := []Symbol{}
 
-	defer func() { logEnd("ListSymbols", start, len(out.Symbols)) }()
+	defer func() { logEnd("ListSymbols", start, len(symbols)) }()
 
 	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedCompiledGoFiles | packages.NeedTypesInfo | packages.NeedName
 
@@ -90,7 +90,7 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 	if err != nil {
 		logError("ListSymbols", err, "failed to load packages")
 
-		return fail(out, err)
+		return fail(ListSymbolsOutput{}, err)
 	}
 
 	for _, pkg := range pkgs {
@@ -110,7 +110,7 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 			ast.Inspect(file, func(n ast.Node) bool {
 				switch decl := n.(type) {
 				case *ast.FuncDecl:
-					out.Symbols = append(out.Symbols, Symbol{
+					symbols = append(symbols, Symbol{
 						Kind:     "func",
 						Name:     decl.Name.Name,
 						Package:  pkg.PkgPath,
@@ -121,7 +121,7 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 				case *ast.TypeSpec:
 					switch t := decl.Type.(type) {
 					case *ast.StructType:
-						out.Symbols = append(out.Symbols, Symbol{
+						symbols = append(symbols, Symbol{
 							Kind:     "struct",
 							Name:     decl.Name.Name,
 							Package:  pkg.PkgPath,
@@ -130,7 +130,7 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 							Exported: decl.Name.IsExported(),
 						})
 					case *ast.InterfaceType:
-						out.Symbols = append(out.Symbols, Symbol{
+						symbols = append(symbols, Symbol{
 							Kind:     "interface",
 							Name:     decl.Name.Name,
 							Package:  pkg.PkgPath,
@@ -141,7 +141,7 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 
 						for _, m := range t.Methods.List {
 							if len(m.Names) > 0 {
-								out.Symbols = append(out.Symbols, Symbol{
+								symbols = append(symbols, Symbol{
 									Kind:     "method",
 									Name:     decl.Name.Name + "." + m.Names[0].Name,
 									Package:  pkg.PkgPath,
@@ -159,15 +159,116 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 		}
 	}
 
-	sort.Slice(out.Symbols, func(i, j int) bool {
-		if out.Symbols[i].Package == out.Symbols[j].Package {
-			return out.Symbols[i].Name < out.Symbols[j].Name
+	sort.Slice(symbols, func(i, j int) bool {
+		if symbols[i].Package == symbols[j].Package {
+			return symbols[i].Name < symbols[j].Name
 		}
 
-		return out.Symbols[i].Package < out.Symbols[j].Package
+		return symbols[i].Package < symbols[j].Package
 	})
 
+	// Group symbols by package and file for token efficiency
+	groupedSymbols := groupSymbolsByPackageAndFile(symbols)
+
+	out := ListSymbolsOutput{
+		GroupedSymbols: groupedSymbols,
+	}
+
 	return nil, out, nil
+}
+
+// groupSymbolsByPackageAndFile groups symbols by package and file for token efficiency
+func groupSymbolsByPackageAndFile(symbols []Symbol) []SymbolGroupByPackage {
+	packageMap := make(map[string]map[string][]SymbolInfo)
+
+	// Group symbols by package and file
+	for _, sym := range symbols {
+		if _, exists := packageMap[sym.Package]; !exists {
+			packageMap[sym.Package] = make(map[string][]SymbolInfo)
+		}
+
+		symbolInfo := SymbolInfo{
+			Kind:     sym.Kind,
+			Name:     sym.Name,
+			Line:     sym.Line,
+			Exported: sym.Exported,
+		}
+
+		packageMap[sym.Package][sym.File] = append(packageMap[sym.Package][sym.File], symbolInfo)
+	}
+
+	// Convert to the grouped structure
+	var result []SymbolGroupByPackage
+	for pkgName, fileMap := range packageMap {
+		var files []SymbolGroupByFile
+		for fileName, syms := range fileMap {
+			files = append(files, SymbolGroupByFile{
+				File:    fileName,
+				Symbols: syms,
+			})
+		}
+
+		// Sort files by name for consistency
+		sort.Slice(files, func(i, j int) bool {
+			return files[i].File < files[j].File
+		})
+
+		result = append(result, SymbolGroupByPackage{
+			Package: pkgName,
+			Files:   files,
+		})
+	}
+
+	// Sort packages by name for consistency
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Package < result[j].Package
+	})
+
+	return result
+}
+
+// groupFunctionComplexityByFile groups symbols by package and file for token efficiency
+func groupFunctionComplexityByFile(functions []FunctionComplexity) []FunctionComplexityGroupByFile {
+	fileMap := make(map[string][]FunctionComplexityInfo)
+
+	// Group symbols by package and file
+	for _, fn := range functions {
+		if _, exists := fileMap[fn.File]; !exists {
+			fileMap[fn.File] = make([]FunctionComplexityInfo, 0)
+		}
+
+		functionInfo := FunctionComplexityInfo{
+			Name:       fn.Name,
+			Line:       fn.Line,
+			Lines:      fn.Lines,
+			Nesting:    fn.Nesting,
+			Cyclomatic: fn.Cyclomatic,
+		}
+
+		fileMap[fn.File] = append(fileMap[fn.File], functionInfo)
+	}
+
+	// Convert to the grouped structure
+	var result []FunctionComplexityGroupByFile
+	for fileName, fns := range fileMap {
+
+		// Sort files by name for consistency
+		sort.Slice(fns, func(i, j int) bool {
+			return fns[i].Line < fns[j].Line
+		})
+
+		result = append(result, FunctionComplexityGroupByFile{
+			File:      fileName,
+			Functions: fns,
+		})
+	}
+
+	// Sort packages by name for consistency
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].File < result[j].File
+	})
+
+	return result
 }
 
 // FindReferences находит все ссылки и использования идентификатора с использованием семантического анализа go/types.
@@ -545,11 +646,13 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 					ifInfo := InterfaceInfo{
 						Name: ts.Name.Name, File: relPath, Line: pos.Line, Methods: []InterfaceMethod{},
 					}
-					for _, m := range iface.Methods.List {
-						if len(m.Names) > 0 {
-							ifInfo.Methods = append(ifInfo.Methods, InterfaceMethod{
-								Name: m.Names[0].Name, Line: pkg.Fset.Position(m.Pos()).Line,
-							})
+					if iface.Methods != nil {
+						for _, m := range iface.Methods.List {
+							if len(m.Names) > 0 {
+								ifInfo.Methods = append(ifInfo.Methods, InterfaceMethod{
+									Name: m.Names[0].Name, Line: pkg.Fset.Position(m.Pos()).Line,
+								})
+							}
 						}
 					}
 
@@ -594,6 +697,8 @@ func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input Anal
 		return fail(out, err)
 	}
 
+	functions := make([]FunctionComplexity, 0)
+
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Syntax {
 			absPath := pkg.Fset.File(file.Pos()).Name()
@@ -611,7 +716,7 @@ func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input Anal
 					Ctx: ctx, Fset: pkg.Fset, Nesting: 0, MaxNesting: 0, Cyclomatic: 1,
 				}
 				ast.Walk(visitor, fd.Body)
-				out.Functions = append(out.Functions, FunctionComplexity{
+				functions = append(functions, FunctionComplexity{
 					Name: fd.Name.Name, File: relPath, Line: pos.Line,
 					Lines: lines, Nesting: visitor.MaxNesting, Cyclomatic: visitor.Cyclomatic,
 				})
@@ -620,6 +725,8 @@ func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input Anal
 			})
 		}
 	}
+
+	out.Functions = groupFunctionComplexityByFile(functions)
 
 	return nil, out, nil
 }

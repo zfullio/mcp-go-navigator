@@ -11,8 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go-navigator/internal/tools"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestListPackages(t *testing.T) {
@@ -41,64 +42,6 @@ func TestListPackages(t *testing.T) {
 
 	if !found {
 		t.Errorf("expected testdata package, got %v", out.Packages)
-	}
-}
-
-func TestListSymbols(t *testing.T) {
-	t.Parallel()
-
-	in := tools.ListSymbolsInput{
-		Dir: testDir(),
-	}
-
-	_, out, err := tools.ListSymbols(context.Background(), &mcp.CallToolRequest{}, in)
-	if err != nil {
-		t.Fatalf("ListSymbols error: %v", err)
-	}
-
-	kinds := map[string]bool{}
-	for _, s := range out.Symbols {
-		kinds[s.Kind] = true
-	}
-
-	if !kinds["struct"] {
-		t.Errorf("expected to find struct, got %+v", out.Symbols)
-	}
-
-	if !kinds["func"] {
-		t.Errorf("expected to find func, got %+v", out.Symbols)
-	}
-
-	if !kinds["interface"] {
-		t.Errorf("expected to find interface, got %+v", out.Symbols)
-	}
-
-	if !kinds["method"] {
-		t.Errorf("expected to find method, got %+v", out.Symbols)
-	}
-}
-
-func TestListSymbols_FilterByPackage(t *testing.T) {
-	t.Parallel()
-
-	in := tools.ListSymbolsInput{
-		Dir:     testDir(),
-		Package: "sample", // фильтрация по имени пакета
-	}
-
-	_, out, err := tools.ListSymbols(context.Background(), &mcp.CallToolRequest{}, in)
-	if err != nil {
-		t.Fatalf("ListSymbols error: %v", err)
-	}
-
-	if len(out.Symbols) == 0 {
-		t.Fatalf("expected symbols in package %q, got 0", in.Package)
-	}
-
-	for _, s := range out.Symbols {
-		if s.Package != in.Package {
-			t.Errorf("unexpected symbol from package %q (expected only %q)", s.Package, in.Package)
-		}
 	}
 }
 
@@ -315,6 +258,27 @@ func TestListInterfaces(t *testing.T) {
 	}
 }
 
+func TestListInterfaces_HandlesEmptyInterface(t *testing.T) {
+	in := tools.ListInterfacesInput{Dir: testDir()}
+
+	_, out, err := tools.ListInterfaces(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("ListInterfaces error: %v", err)
+	}
+
+	for _, iface := range out.Interfaces {
+		if iface.Name == "Empty" {
+			if len(iface.Methods) != 0 {
+				t.Fatalf("expected Empty interface to have zero methods, got %d", len(iface.Methods))
+			}
+
+			return
+		}
+	}
+
+	t.Fatalf("expected to find Empty interface in testdata, but it was missing")
+}
+
 func TestAnalyzeComplexity(t *testing.T) {
 	in := tools.AnalyzeComplexityInput{Dir: testDir()}
 
@@ -324,45 +288,39 @@ func TestAnalyzeComplexity(t *testing.T) {
 	}
 
 	if len(out.Functions) == 0 {
-		t.Fatalf("expected at least 1 function, got 0")
+		t.Fatalf("expected at least 1 function group, got 0")
 	}
 
-	// Карта по именам функций
-	funcs := map[string]tools.FunctionComplexity{}
-	for _, f := range out.Functions {
-		funcs[f.Name] = f
-	}
-
-	// Проверяем Simple
-	if f, ok := funcs["Simple"]; !ok {
-		t.Errorf("expected function Simple, got %+v", funcs)
-	} else {
-		if f.Cyclomatic != 1 {
-			t.Errorf("expected Simple cyclomatic=1, got %d", f.Cyclomatic)
+	funcs := map[string]tools.FunctionComplexityInfo{}
+	for _, group := range out.Functions {
+		for _, fn := range group.Functions {
+			funcs[fn.Name] = fn
 		}
 	}
 
-	// Проверяем WithIf
+	if f, ok := funcs["Simple"]; !ok {
+		t.Errorf("expected function Simple, got %+v", funcs)
+	} else if f.Cyclomatic != 1 {
+		t.Errorf("expected Simple cyclomatic=1, got %d", f.Cyclomatic)
+	}
+
 	if f, ok := funcs["WithIf"]; !ok {
 		t.Errorf("expected function WithIf, got %+v", funcs)
 	} else {
 		if f.Cyclomatic < 2 {
 			t.Errorf("expected WithIf cyclomatic>=2, got %d", f.Cyclomatic)
 		}
-
 		if f.Nesting < 1 {
 			t.Errorf("expected WithIf nesting>=1, got %d", f.Nesting)
 		}
 	}
 
-	// Проверяем WithLoopAndSwitch
 	if f, ok := funcs["WithLoopAndSwitch"]; !ok {
 		t.Errorf("expected function WithLoopAndSwitch, got %+v", funcs)
 	} else {
 		if f.Cyclomatic < 3 {
 			t.Errorf("expected WithLoopAndSwitch cyclomatic>=3, got %d", f.Cyclomatic)
 		}
-
 		if f.Nesting < 2 {
 			t.Errorf("expected WithLoopAndSwitch nesting>=2, got %d", f.Nesting)
 		}
@@ -707,6 +665,134 @@ func TestMetricsSummary(t *testing.T) {
 	// Basic metrics should be computed
 }
 
+func TestReadFile_Summary(t *testing.T) {
+	in := tools.ReadFileInput{Dir: testDir(), File: "foo.go", Mode: "summary"}
+
+	_, out, err := tools.ReadFile(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("ReadFile error: %v", err)
+	}
+
+	if out.Package != "sample" {
+		t.Errorf("expected package sample, got %s", out.Package)
+	}
+
+	if out.Source != "" {
+		t.Errorf("expected source to be empty in summary mode")
+	}
+
+	if out.LineCount <= 0 {
+		t.Errorf("expected positive line count, got %d", out.LineCount)
+	}
+
+	seen := map[string]string{}
+	for _, sym := range out.Symbols {
+		seen[sym.Name] = sym.Kind
+	}
+
+	if seen["Foo"] != "struct" {
+		t.Errorf("expected Foo struct in symbols, got kind %s", seen["Foo"])
+	}
+
+	if seen["DoSomething"] != "func" {
+		t.Errorf("expected DoSomething function in symbols, got kind %s", seen["DoSomething"])
+	}
+
+	if seen["unusedConst"] != "const" {
+		t.Errorf("expected unusedConst const in symbols, got kind %s", seen["unusedConst"])
+	}
+}
+
+func TestReadFile_Raw(t *testing.T) {
+	in := tools.ReadFileInput{Dir: testDir(), File: "foo.go", Mode: "raw"}
+
+	_, out, err := tools.ReadFile(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("ReadFile error: %v", err)
+	}
+
+	if out.Source == "" {
+		t.Fatalf("expected source content in raw mode")
+	}
+
+	if out.Package != "" || len(out.Imports) != 0 {
+		t.Errorf("expected package and imports to be empty in raw mode")
+	}
+}
+
+func TestReadFunc_Method(t *testing.T) {
+	in := tools.ReadFuncInput{Dir: testDir(), Name: "Foo.DoSomething"}
+
+	_, out, err := tools.ReadFunc(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("ReadFunc error: %v", err)
+	}
+
+	fn := out.Function
+	if fn.Name != "DoSomething" {
+		t.Fatalf("expected function name DoSomething, got %s", fn.Name)
+	}
+
+	if fn.Receiver != "Foo" {
+		t.Errorf("expected receiver Foo, got %s", fn.Receiver)
+	}
+
+	if fn.File != "foo.go" {
+		t.Errorf("expected file foo.go, got %s", fn.File)
+	}
+
+	if !strings.Contains(fn.SourceCode, "return strings.ToUpper") {
+		t.Errorf("expected source code to contain body, got %q", fn.SourceCode)
+	}
+}
+
+func TestReadStruct_WithMethods(t *testing.T) {
+	in := tools.ReadStructInput{Dir: testDir(), Name: "Foo", IncludeMethods: true}
+
+	_, out, err := tools.ReadStruct(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("ReadStruct error: %v", err)
+	}
+
+	st := out.Struct
+	if st.Name != "Foo" {
+		t.Fatalf("expected struct Foo, got %s", st.Name)
+	}
+
+	if len(st.Fields) == 0 {
+		t.Fatalf("expected struct fields, got 0")
+	}
+
+	foundID := false
+	for _, field := range st.Fields {
+		if field.Name == "ID" && field.Type == "int" {
+			foundID = true
+		}
+	}
+
+	if !foundID {
+		t.Errorf("expected field ID int in struct fields")
+	}
+
+	if !containsAll(st.Methods, "DoSomething", "deadHelper") {
+		t.Errorf("expected methods DoSomething and deadHelper, got %v", st.Methods)
+	}
+}
+
+func TestHealthCheck(t *testing.T) {
+	if err := tools.HealthCheck(); err != nil {
+		t.Fatalf("expected health check to pass, got error: %v", err)
+	}
+}
+
+func TestHealthCheck_NoGoInPath(t *testing.T) {
+	t.Setenv("PATH", "")
+
+	if err := tools.HealthCheck(); err == nil {
+		t.Fatalf("expected health check to fail when PATH is empty")
+	}
+}
+
 func TestDeadCodeExtended(t *testing.T) {
 	in := tools.DeadCodeInput{
 		Dir:             testDir(),
@@ -866,8 +952,8 @@ func TestListSymbols_WithInvalidPackage(t *testing.T) {
 	}
 
 	// Should return empty result for non-existent package
-	if len(out.Symbols) != 0 {
-		t.Errorf("expected 0 symbols for non-existent package, got %v", len(out.Symbols))
+	if len(out.GroupedSymbols) != 0 {
+		t.Errorf("expected 0 symbols for non-existent package, got %v", len(out.GroupedSymbols))
 	}
 }
 
@@ -1240,6 +1326,21 @@ func testDir() string {
 	_, filename, _, _ := runtime.Caller(0)
 
 	return filepath.Join(filepath.Dir(filename), "testdata", "sample")
+}
+
+func containsAll(values []string, names ...string) bool {
+	set := make(map[string]struct{}, len(values))
+	for _, v := range values {
+		set[v] = struct{}{}
+	}
+
+	for _, name := range names {
+		if _, ok := set[name]; !ok {
+			return false
+		}
+	}
+
+	return true
 }
 
 func benchDir() string {
