@@ -62,6 +62,9 @@ func getFileLines(fset *token.FileSet, file *ast.File) []string {
 	}
 	fileLinesCache.Unlock()
 
+	// Add file to watcher to track changes
+	_ = addFileToWatch(filename, filename) // Using filename as a simple cache key for file lines cache
+
 	return lines
 }
 
