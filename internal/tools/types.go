@@ -439,3 +439,55 @@ type ReadFileOutput struct {
 	// Source - исходный код файла (если запрошен режим raw или ast)
 	Source string `json:"source,omitempty" jsonschema:"Full source code of the file if requested"`
 }
+
+// ------------------ read struct ------------------
+
+// ReadStructInput содержит входные данные для инструмента ReadStruct.
+type ReadStructInput struct {
+	// Dir - корневая директория Go-модуля
+	Dir string `json:"dir" jsonschema:"Root directory of the Go module"`
+	// Name - имя структуры (например, 'User' или 'models.User')
+	Name string `json:"name" jsonschema:"Name of the struct to read (e.g., 'User' or 'models.User')"`
+	// IncludeMethods - если true, возвращает также методы структуры
+	IncludeMethods bool `json:"includeMethods,omitempty" jsonschema:"If true, also include methods of the struct"`
+}
+
+// StructField представляет отдельное поле структуры.
+type StructField struct {
+	// Name - имя поля
+	Name string `json:"name" jsonschema:"Field name"`
+	// Type - тип поля (например, string, int, time.Time)
+	Type string `json:"type" jsonschema:"Field type"`
+	// Tag - значение структурного тега (например, json:"id,omitempty")
+	Tag string `json:"tag,omitempty" jsonschema:"Struct tag value"`
+	// Doc - комментарий к полю, если есть
+	Doc string `json:"doc,omitempty" jsonschema:"Field documentation comment"`
+}
+
+// StructInfo представляет объявление структуры.
+type StructInfo struct {
+	// Name - имя структуры
+	Name string `json:"name" jsonschema:"Struct name"`
+	// Package - имя пакета, в котором определена структура
+	Package string `json:"package" jsonschema:"Package where the struct is defined"`
+	// File - относительный путь к файлу, где определена структура
+	File string `json:"file" jsonschema:"File where the struct is defined"`
+	// Line - номер строки объявления структуры
+	Line int `json:"line" jsonschema:"Line number where the struct is declared"`
+	// Exported - true, если структура экспортируется
+	Exported bool `json:"exported" jsonschema:"True if the struct is exported"`
+	// Doc - документация над структурой (комментарий)
+	Doc string `json:"doc,omitempty" jsonschema:"Struct documentation comment"`
+	// Fields - список полей структуры
+	Fields []StructField `json:"fields" jsonschema:"List of struct fields"`
+	// Methods - список методов структуры, если IncludeMethods = true
+	Methods []string `json:"methods,omitempty" jsonschema:"List of methods belonging to the struct"`
+	// Source - исходный код объявления структуры
+	Source string `json:"source" jsonschema:"Full struct source code"`
+}
+
+// ReadStructOutput содержит результаты работы инструмента ReadStruct.
+type ReadStructOutput struct {
+	// Struct - описание найденной структуры
+	Struct StructInfo `json:"struct" jsonschema:"Description of the found struct"`
+}

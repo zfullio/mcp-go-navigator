@@ -554,3 +554,12 @@ func receiverName(fd *ast.FuncDecl) string {
 
 	return ""
 }
+
+// exprString возвращает строковое представление типа выражения AST (для полей структуры).
+func exprString(e ast.Expr) string {
+	var buf bytes.Buffer
+	if err := format.Node(&buf, token.NewFileSet(), e); err != nil {
+		return ""
+	}
+	return buf.String()
+}

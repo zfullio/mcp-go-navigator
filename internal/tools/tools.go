@@ -1528,3 +1528,138 @@ func ReadFile(ctx context.Context, req *mcp.CallToolRequest, input ReadFileInput
 
 	return nil, out, nil
 }
+
+// ReadStruct возвращает объявление структуры (struct) с её полями, тегами, комментариями и, при необходимости, методами.
+func ReadStruct(ctx context.Context, req *mcp.CallToolRequest, input ReadStructInput) (
+	*mcp.CallToolResult,
+	ReadStructOutput,
+	error,
+) {
+	start := logStart("ReadStruct", map[string]string{"dir": input.Dir, "name": input.Name})
+	out := ReadStructOutput{}
+	defer func() { logEnd("ReadStruct", start, 1) }()
+
+	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedCompiledGoFiles | packages.NeedTypesInfo
+	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
+	if err != nil {
+		logError("ReadStruct", err, "failed to load packages")
+		return fail(out, err)
+	}
+
+	target := input.Name
+	var pkgName, structName string
+
+	// Поддержка формата models.User
+	if strings.Contains(target, ".") {
+		parts := strings.SplitN(target, ".", 2)
+		pkgName, structName = parts[0], parts[1]
+	} else {
+		structName = target
+	}
+
+	for _, pkg := range pkgs {
+		if pkgName != "" && pkg.Name != pkgName {
+			continue
+		}
+
+		for _, file := range pkg.Syntax {
+			fset := pkg.Fset
+			fileName := fset.File(file.Pos()).Name()
+			relPath, _ := filepath.Rel(input.Dir, fileName)
+
+			ast.Inspect(file, func(n ast.Node) bool {
+				ts, ok := n.(*ast.TypeSpec)
+				if !ok {
+					return true
+				}
+
+				if ts.Name.Name != structName {
+					return true
+				}
+
+				st, ok := ts.Type.(*ast.StructType)
+				if !ok {
+					return true
+				}
+
+				var buf bytes.Buffer
+				_ = format.Node(&buf, fset, ts)
+
+				info := StructInfo{
+					Name:     ts.Name.Name,
+					Package:  pkg.PkgPath,
+					File:     relPath,
+					Line:     fset.Position(ts.Pos()).Line,
+					Exported: ts.Name.IsExported(),
+					Source:   buf.String(),
+					Fields:   []StructField{},
+					Doc:      "",
+					Methods:  []string{},
+				}
+
+				// Doc-комментарий к структуре
+				if ts.Doc != nil {
+					info.Doc = strings.TrimSpace(ts.Doc.Text())
+				}
+
+				// Поля структуры
+				for _, field := range st.Fields.List {
+					fieldType := exprString(field.Type)
+					tag := ""
+					if field.Tag != nil {
+						tag = strings.Trim(field.Tag.Value, "`")
+					}
+					doc := ""
+					if field.Doc != nil {
+						doc = strings.TrimSpace(field.Doc.Text())
+					}
+
+					for _, name := range field.Names {
+						info.Fields = append(info.Fields, StructField{
+							Name: name.Name,
+							Type: fieldType,
+							Tag:  tag,
+							Doc:  doc,
+						})
+					}
+
+					// анонимные (embedded) поля
+					if len(field.Names) == 0 {
+						info.Fields = append(info.Fields, StructField{
+							Name: fieldType,
+							Type: fieldType,
+							Tag:  tag,
+							Doc:  doc,
+						})
+					}
+				}
+
+				// Методы
+				if input.IncludeMethods {
+					for _, f := range pkg.Syntax {
+						ast.Inspect(f, func(n ast.Node) bool {
+							fd, ok := n.(*ast.FuncDecl)
+							if !ok || fd.Recv == nil {
+								return true
+							}
+							if receiverName(fd) == structName {
+								info.Methods = append(info.Methods, fd.Name.Name)
+							}
+							return true
+						})
+					}
+					sort.Strings(info.Methods)
+				}
+
+				out.Struct = info
+				return false // нашли нужную структуру
+			})
+
+			if out.Struct.Name != "" {
+				return nil, out, nil
+			}
+		}
+	}
+
+	return nil, out, fmt.Errorf("struct %q not found", input.Name)
+}
