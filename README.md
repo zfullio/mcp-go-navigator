@@ -134,7 +134,7 @@ The project is structured as follows:
 - `internal/tools/refactorers.go`: Write-capable flows such as `renameSymbol` and `astRewrite`
 - `internal/tools/readers.go`: Source extraction helpers (`readFile`, `readFunc`, `readStruct`)
 - `internal/tools/cache.go`, `helpers.go`, `logging.go`, `descriptions.go`: Shared infrastructure, logging, and tool metadata
-- `internal/tools/tools_test.go`: Comprehensive test suite for all tools
+- `internal/tools/*_test.go` (e.g., `listers_test.go`, `finders_test.go`, `refactorers_test.go`): Decomposed test suites for each tool category.
 - `internal/tools/testdata/sample/`: Sample Go files used for testing
 
 ## Dependencies
@@ -145,7 +145,7 @@ The project relies on:
 
 ## Testing
 
-Run all tests:
+The test suite is decomposed for targeted testing of individual tools. Run all tests:
 
 ```bash
 # Run all tests

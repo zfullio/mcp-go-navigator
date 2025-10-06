@@ -1,4 +1,4 @@
-# Go-Help-MCP Agent Handbook
+# Go-Navigator-MCP Agent Handbook
 
 ## Mission
 - `go-help-mcp` exposes the **Go Navigator** MCP server (v1.4.0) for semantic Go code analysis and refactoring.
@@ -17,17 +17,21 @@
 ├── internal/
 │   └── tools/
 │       ├── analyzers.go      # metrics, dead code, dependency graph tools
+│       ├── analyzers_test.go # tests for analyzers.go
 │       ├── cache.go          # package/file caches shared across tools
 │       ├── descriptions.go   # tool metadata used during registration
 │       ├── finders.go        # definitions/references/implementations lookups
+│       ├── finders_test.go   # tests for finders.go
 │       ├── health.go         # HealthCheck()
 │       ├── helpers.go        # shared AST utilities, diff helpers
 │       ├── listers.go        # list tools (packages, symbols, imports, interfaces)
+│       ├── listers_test.go   # tests for listers.go
 │       ├── logging.go        # structured logging helpers
 │       ├── readers.go        # readFile/readFunc/readStruct implementations
+│       ├── readers_test.go   # tests for readers.go
 │       ├── refactorers.go    # renameSymbol, astRewrite and other mutating flows
+│       ├── refactorers_test.go # tests for refactorers.go
 │       ├── types.go          # JSON schemas for inputs/outputs
-│       ├── tools_test.go     # end-to-end and unit tests
 │       └── testdata/sample/  # fixtures (bar.go, foo.go, complex.go, empty_interface.go,
 │                             #             dead.go, store.go, print.go)
 ├── go.mod (go 1.25)
@@ -68,7 +72,7 @@
 ## Build & Test Basics
 - Build: `go build -o go-navigator ./cmd/go-navigator`.
 - Recommended test run: `GOCACHE=$(pwd)/.gocache go test ./...` (delete `.gocache/` afterwards if needed).
-- `tools_test.go` covers: discovery (`listPackages`), navigation (`listSymbols`, `listImports`, `listInterfaces`, `findDefinitions`, `findReferences`, `findImplementations`), analysis (`analyzeComplexity`, `metricsSummary`, `deadCode`, `analyzeDependencies`), source readers (`readFile`, `readFunc`, `readStruct`), refactoring (`renameSymbol`, `astRewrite`), and `HealthCheck`.
+- `*_test.go` (e.g., `listers_test.go`, `finders_test.go`, `refactorers_test.go`): Decomposed test suites for each tool category: discovery (`listPackages`), navigation (`listSymbols`, `listImports`, `listInterfaces`, `findDefinitions`, `findReferences`, `findImplementations`), analysis (`analyzeComplexity`, `metricsSummary`, `deadCode`, `analyzeDependencies`), source readers (`readFile`, `readFunc`, `readStruct`), refactoring (`renameSymbol`, `astRewrite`), and `HealthCheck`. This structure allows for targeted testing of individual functionalities.
 
 ## Recommended Agent Flow
 1. Run `listPackages` from the module root to establish scope.
