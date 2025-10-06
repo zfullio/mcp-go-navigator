@@ -69,7 +69,7 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 
 	defer func() { logEnd("ListSymbols", start, len(symbols)) }()
 
-	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedCompiledGoFiles | packages.NeedTypesInfo | packages.NeedName
+	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedCompiledGoFiles | packages.NeedTypesInfo | packages.NeedName | packages.NeedFiles
 
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
@@ -88,9 +88,8 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 			continue
 		}
 
-		for _, file := range pkg.Syntax {
-			absPath := pkg.Fset.File(file.Pos()).Name()
-			relPath, _ := filepath.Rel(input.Dir, absPath)
+		for i, file := range pkg.Syntax {
+			relPath := resolveFilePath(pkg, input.Dir, i, file)
 
 			ast.Inspect(file, func(n ast.Node) bool {
 				switch decl := n.(type) {
@@ -353,10 +352,8 @@ func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImport
 	flatImports := make([]Import, 0)
 
 	for _, pkg := range pkgs {
-		for _, file := range pkg.Syntax {
-			absPath := pkg.Fset.File(file.Pos()).Name()
-
-			relPath, _ := filepath.Rel(input.Dir, absPath)
+		for i, file := range pkg.Syntax {
+			relPath := resolveFilePath(pkg, input.Dir, i, file)
 			for _, imp := range file.Imports {
 				path := strings.Trim(imp.Path.Value, `"`)
 				pos := pkg.Fset.Position(imp.Pos())
@@ -391,7 +388,7 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 
 	defer func() { logEnd("ListInterfaces", start, len(out.Interfaces)) }()
 
-	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles
+	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedName
 
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
@@ -403,9 +400,8 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 	interfacesByPackage := make(map[string][]InterfaceInfo)
 
 	for _, pkg := range pkgs {
-		for _, file := range pkg.Syntax {
-			absPath := pkg.Fset.File(file.Pos()).Name()
-			relPath, _ := filepath.Rel(input.Dir, absPath)
+		for i, file := range pkg.Syntax {
+			relPath := resolveFilePath(pkg, input.Dir, i, file)
 
 			pkgKey := pkg.PkgPath
 			if pkgKey == "" {
@@ -453,4 +449,34 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 	out.Interfaces = groupInterfacesByPackage(interfacesByPackage)
 
 	return nil, out, nil
+}
+
+func resolveFilePath(pkg *packages.Package, inputDir string, fileIndex int, file *ast.File) string {
+	var absPath string
+
+	// 1. Пытаемся получить путь через FileSet
+	if f := pkg.Fset.File(file.Pos()); f != nil {
+		absPath = f.Name()
+	}
+
+	// 2. Если не удалось — fallback через CompiledGoFiles и GoFiles
+	if absPath == "" {
+		if len(pkg.CompiledGoFiles) > fileIndex {
+			absPath = pkg.CompiledGoFiles[fileIndex]
+		} else if len(pkg.GoFiles) > fileIndex {
+			absPath = pkg.GoFiles[fileIndex]
+		}
+	}
+
+	// 3. Делаем путь относительным к input.Dir (для удобства)
+	if absPath == "" {
+		return ""
+	}
+
+	relPath, err := filepath.Rel(inputDir, absPath)
+	if err != nil {
+		return absPath // на случай ошибки просто вернуть абсолютный
+	}
+
+	return relPath
 }
