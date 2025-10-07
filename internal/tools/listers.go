@@ -3,11 +3,13 @@ package tools
 import (
 	"context"
 	"go/ast"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -479,4 +481,177 @@ func resolveFilePath(pkg *packages.Package, inputDir string, fileIndex int, file
 	}
 
 	return relPath
+}
+
+// ProjectSchema aggregates full structural metadata of a Go module,
+// including packages, symbols, interfaces, imports, and dependency graph.
+//
+// Parameters:
+//   - ctx: execution context
+//   - req: MCP tool request
+//   - input: input data specifying the module directory and depth level
+//
+// Returns:
+//   - MCP tool call result
+//   - project schema with detailed structure and dependencies
+//   - error if packages failed to load or parsing encountered issues
+func ProjectSchema(ctx context.Context, req *mcp.CallToolRequest, input ProjectSchemaInput) (
+	*mcp.CallToolResult,
+	ProjectSchemaOutput,
+	error,
+) {
+	start := logStart("ProjectSchema", map[string]string{
+		"dir":   input.Dir,
+		"depth": input.Depth,
+	})
+	out := ProjectSchemaOutput{}
+	defer func() { logEnd("ProjectSchema", start, len(out.Packages)) }()
+
+	mode := packages.NeedName |
+		packages.NeedCompiledGoFiles |
+		packages.NeedImports |
+		packages.NeedSyntax |
+		packages.NeedTypes |
+		packages.NeedTypesInfo
+
+	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
+	if err != nil {
+		logError("ProjectSchema", err, "failed to load packages")
+		return fail(out, err)
+	}
+
+	// Read go.mod metadata
+	moduleName, goVersion := readGoModInfo(input.Dir)
+	out.Module = moduleName
+	out.GoVersion = goVersion
+	out.RootDir = input.Dir
+
+	var (
+		structCount, funcCount, ifaceCount int
+	)
+
+	pkgMap := map[string]ProjectPackage{}
+	depGraph := map[string][]string{}
+	externalDeps := map[string]struct{}{}
+	allInterfaces := []ProjectInterface{}
+
+	for _, pkg := range pkgs {
+		pkgPath := pkg.PkgPath
+		if pkgPath == "" {
+			pkgPath = pkg.Name
+		}
+
+		symbols := ProjectPackageSymbols{}
+		imports := make([]string, 0, len(pkg.Imports))
+
+		for imp := range pkg.Imports {
+			imports = append(imports, imp)
+			depGraph[pkgPath] = append(depGraph[pkgPath], imp)
+
+			if !strings.HasPrefix(imp, moduleName) &&
+				!strings.HasPrefix(imp, "std/") &&
+				!strings.Contains(imp, "/internal/") {
+				externalDeps[imp] = struct{}{}
+			}
+		}
+
+		for i, file := range pkg.Syntax {
+			_ = i // keep consistent with your style, if relPath needed later
+			ast.Inspect(file, func(n ast.Node) bool {
+				switch ts := n.(type) {
+				case *ast.TypeSpec:
+					switch t := ts.Type.(type) {
+					case *ast.StructType:
+						symbols.Structs = append(symbols.Structs, ts.Name.Name)
+						structCount++
+					case *ast.InterfaceType:
+						methods := []string{}
+						if t.Methods != nil {
+							for _, m := range t.Methods.List {
+								if len(m.Names) > 0 {
+									methods = append(methods, m.Names[0].Name)
+								}
+							}
+						}
+						allInterfaces = append(allInterfaces, ProjectInterface{
+							Name: ts.Name.Name, DefinedIn: pkgPath, Methods: methods,
+						})
+						symbols.Interfaces = append(symbols.Interfaces, ts.Name.Name)
+						ifaceCount++
+					default:
+						symbols.Types = append(symbols.Types, ts.Name.Name)
+					}
+				case *ast.FuncDecl:
+					symbols.Functions = append(symbols.Functions, ts.Name.Name)
+					funcCount++
+				}
+				return true
+			})
+		}
+
+		pkgMap[pkgPath] = ProjectPackage{
+			Path:    pkgPath,
+			Name:    pkg.Name,
+			Imports: imports,
+			Symbols: symbols,
+		}
+	}
+
+	// Collect sorted results
+	for _, pkg := range pkgMap {
+		out.Packages = append(out.Packages, pkg)
+	}
+	sort.Slice(out.Packages, func(i, j int) bool { return out.Packages[i].Path < out.Packages[j].Path })
+
+	for dep := range externalDeps {
+		out.ExternalDeps = append(out.ExternalDeps, dep)
+	}
+	sort.Strings(out.ExternalDeps)
+
+	out.DependencyGraph = depGraph
+	out.Interfaces = allInterfaces
+	out.Summary = ProjectSummary{
+		PackageCount:   len(out.Packages),
+		FunctionCount:  funcCount,
+		StructCount:    structCount,
+		InterfaceCount: ifaceCount,
+	}
+
+	return nil, out, nil
+}
+
+// readGoModInfo reads the module name and Go version from go.mod located in the given directory.
+//
+// Returns:
+//   - moduleName: value after "module" directive
+//   - goVersion: value after "go" directive
+func readGoModInfo(dir string) (moduleName, goVersion string) {
+	modFile := filepath.Join(dir, "go.mod")
+
+	data, err := os.ReadFile(modFile)
+	if err != nil {
+		log.Debug().Err(err).Str("file", modFile).Msg("go.mod not found or unreadable")
+		return "", ""
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			moduleName = strings.TrimSpace(strings.TrimPrefix(line, "module"))
+			continue
+		}
+		if strings.HasPrefix(line, "go ") {
+			goVersion = strings.TrimSpace(strings.TrimPrefix(line, "go"))
+		}
+	}
+
+	if moduleName == "" {
+		log.Warn().Str("dir", dir).Msg("module name not found in go.mod")
+	}
+	if goVersion == "" {
+		log.Debug().Str("dir", dir).Msg("Go version not found in go.mod")
+	}
+
+	return moduleName, goVersion
 }

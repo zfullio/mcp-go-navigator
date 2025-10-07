@@ -194,3 +194,18 @@ Use when:
 Example:
 readStruct { "dir": ".", "name": "User", "includeMethods": true }
 `
+
+const ProjectSchemaDesc = `
+Aggregates a full structural schema of a Go project including:
+- module name and Go version
+- packages and their imports
+- structs, interfaces, and functions
+- external dependencies and inter-package dependency graph
+
+🪶 Use when:
+- You need a high-level overview of a Go module
+- You want to visualize or analyze package relationships
+
+💡 Example:
+projectSchema { "dir": ".", "depth": "standard" }
+`

@@ -564,3 +564,82 @@ type ReadStructOutput struct {
 	// Struct - description of the found struct
 	Struct StructInfo `json:"struct" jsonschema:"Description of the found struct"`
 }
+
+// ---
+// ProjectSchemaInput defines input parameters for the ProjectSchema tool.
+type ProjectSchemaInput struct {
+	// Dir - root directory of the Go module to analyze
+	Dir string `json:"dir" jsonschema:"Root directory of the Go module to analyze"`
+
+	// Depth - level of analysis detail: "summary", "standard", or "deep"
+	Depth string `json:"depth,omitempty" jsonschema:"Level of analysis detail: summary, standard, or deep"`
+}
+
+// ProjectPackageSymbols represents exported symbols within a package.
+type ProjectPackageSymbols struct {
+	// Structs - list of struct type names
+	Structs []string `json:"structs,omitempty" jsonschema:"List of struct type names"`
+	// Interfaces - list of interface type names
+	Interfaces []string `json:"interfaces,omitempty" jsonschema:"List of interface type names"`
+	// Functions - list of function names
+	Functions []string `json:"functions,omitempty" jsonschema:"List of function names"`
+	// Types - list of additional named types
+	Types []string `json:"types,omitempty" jsonschema:"List of additional named types"`
+}
+
+// ProjectPackage describes a Go package and its relationships.
+type ProjectPackage struct {
+	// Path - full import path of the package
+	Path string `json:"path" jsonschema:"Full import path of the package"`
+	// Name - short package name
+	Name string `json:"name" jsonschema:"Short package name"`
+	// Imports - list of imported package paths
+	Imports []string `json:"imports,omitempty" jsonschema:"List of imported package paths"`
+	// Symbols - exported symbols defined in the package
+	Symbols ProjectPackageSymbols `json:"symbols,omitempty" jsonschema:"Exported symbols defined in the package"`
+}
+
+// ProjectInterface represents an interface definition across the module.
+type ProjectInterface struct {
+	// Name - interface name
+	Name string `json:"name" jsonschema:"Interface name"`
+	// Methods - list of method names defined in the interface
+	Methods []string `json:"methods,omitempty" jsonschema:"List of method names defined in the interface"`
+	// DefinedIn - package path where the interface is defined
+	DefinedIn string `json:"definedIn" jsonschema:"Package path where the interface is defined"`
+}
+
+// ProjectDependencyGraph represents inter-package dependencies.
+type ProjectDependencyGraph map[string][]string
+
+// ProjectSummary provides aggregated statistics about the project.
+type ProjectSummary struct {
+	// PackageCount - total number of packages analyzed
+	PackageCount int `json:"packageCount" jsonschema:"Total number of packages analyzed"`
+	// FunctionCount - total number of functions found
+	FunctionCount int `json:"functionCount" jsonschema:"Total number of functions found"`
+	// StructCount - total number of struct types found
+	StructCount int `json:"structCount" jsonschema:"Total number of struct types found"`
+	// InterfaceCount - total number of interfaces found
+	InterfaceCount int `json:"interfaceCount" jsonschema:"Total number of interfaces found"`
+}
+
+// ProjectSchemaOutput contains a structured representation of a Go project's architecture.
+type ProjectSchemaOutput struct {
+	// Module - Go module name from go.mod
+	Module string `json:"module" jsonschema:"Go module name from go.mod"`
+	// GoVersion - Go language version declared in go.mod
+	GoVersion string `json:"goVersion,omitempty" jsonschema:"Go language version declared in go.mod"`
+	// RootDir - absolute path to the analyzed module root
+	RootDir string `json:"rootDir" jsonschema:"Absolute path to the analyzed module root"`
+	// Packages - list of analyzed packages with symbols and imports
+	Packages []ProjectPackage `json:"packages,omitempty" jsonschema:"List of analyzed packages with symbols and imports"`
+	// Interfaces - list of all interfaces defined across the project
+	Interfaces []ProjectInterface `json:"interfaces,omitempty" jsonschema:"List of all interfaces defined across the project"`
+	// ExternalDeps - list of external module dependencies (excluding stdlib and internal packages)
+	ExternalDeps []string `json:"externalDeps,omitempty" jsonschema:"List of external module dependencies"`
+	// DependencyGraph - package-to-package import graph
+	DependencyGraph ProjectDependencyGraph `json:"dependencyGraph,omitempty" jsonschema:"Package-to-package import graph"`
+	// Summary - aggregated counts of key code entities
+	Summary ProjectSummary `json:"summary,omitempty" jsonschema:"Aggregated counts of key code entities"`
+}

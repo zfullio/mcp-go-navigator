@@ -9,10 +9,11 @@ import (
 	"syscall"
 	"time"
 
+	"go-navigator/internal/tools"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"go-navigator/internal/tools"
 )
 
 func main() {
@@ -189,6 +190,16 @@ Usage
 		},
 		Description: tools.ReadStructDesc,
 	}, tools.ReadStruct)
+
+	mcp.AddTool[tools.ProjectSchemaInput, tools.ProjectSchemaOutput](server, &mcp.Tool{
+		Name:  "projectSchema",
+		Title: "Project Schema",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+		},
+		Description: tools.ProjectSchemaDesc,
+	}, tools.ProjectSchema)
 
 	err := tools.HealthCheck()
 	if err != nil {
