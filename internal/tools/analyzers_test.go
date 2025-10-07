@@ -14,6 +14,8 @@ import (
 )
 
 func TestDeadCode(t *testing.T) {
+	t.Parallel()
+
 	in := tools.DeadCodeInput{Dir: testDir()}
 
 	_, out, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
@@ -50,6 +52,8 @@ func TestDeadCode_WithPackageFilter(t *testing.T) {
 		IncludeExported: true,
 	}
 
+	t.Parallel()
+
 	_, out, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
 	if err != nil {
 		t.Fatalf("DeadCode error: %v", err)
@@ -71,6 +75,8 @@ func TestDeadCode_WithPackageFilter(t *testing.T) {
 }
 
 func TestDeadCode_WithUnknownPackage(t *testing.T) {
+	t.Parallel()
+
 	in := tools.DeadCodeInput{
 		Dir:     testDir(),
 		Package: "nonexistent/package",
@@ -83,6 +89,8 @@ func TestDeadCode_WithUnknownPackage(t *testing.T) {
 }
 
 func TestDeadCodeExtended(t *testing.T) {
+	t.Parallel()
+
 	in := tools.DeadCodeInput{
 		Dir:             testDir(),
 		IncludeExported: true, // Test the extended functionality
@@ -160,6 +168,8 @@ func TestDeadCodeExtended(t *testing.T) {
 }
 
 func TestDeadCode_WithInvalidDir(t *testing.T) {
+	t.Parallel()
+
 	in := tools.DeadCodeInput{Dir: "/nonexistent/directory"}
 
 	_, _, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
@@ -169,6 +179,8 @@ func TestDeadCode_WithInvalidDir(t *testing.T) {
 }
 
 func TestDeadCodeWithMethods(t *testing.T) {
+	t.Parallel()
+
 	in := tools.DeadCodeInput{Dir: testDir()}
 
 	_, out, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
@@ -193,6 +205,8 @@ func TestDeadCodeWithMethods(t *testing.T) {
 }
 
 func TestDeadCode_AllKinds(t *testing.T) {
+	t.Parallel()
+
 	in := tools.DeadCodeInput{Dir: testDir()}
 
 	_, out, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
@@ -232,6 +246,8 @@ func TestDeadCode_AllKinds(t *testing.T) {
 }
 
 func TestDeadCode_WithLimit(t *testing.T) {
+	t.Parallel()
+
 	in := tools.DeadCodeInput{Dir: testDir(), Limit: 2}
 
 	_, out, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
@@ -257,6 +273,8 @@ func TestDeadCode_WithLimit(t *testing.T) {
 }
 
 func TestAnalyzeDependencies(t *testing.T) {
+	t.Parallel()
+
 	in := tools.AnalyzeDependenciesInput{Dir: testDir()}
 
 	_, out, err := tools.AnalyzeDependencies(context.Background(), &mcp.CallToolRequest{}, in)
@@ -298,6 +316,8 @@ func TestAnalyzeDependencies_WithPackageFilter(t *testing.T) {
 		Package: pkgPath,
 	}
 
+	t.Parallel()
+
 	_, out, err := tools.AnalyzeDependencies(context.Background(), &mcp.CallToolRequest{}, in)
 	if err != nil {
 		t.Fatalf("AnalyzeDependencies error: %v", err)
@@ -315,6 +335,8 @@ func TestAnalyzeDependencies_WithPackageFilter(t *testing.T) {
 }
 
 func TestAnalyzeDependencies_WithUnknownPackage(t *testing.T) {
+	t.Parallel()
+
 	dir := projectRoot()
 	in := tools.AnalyzeDependenciesInput{
 		Dir:     dir,
@@ -328,6 +350,8 @@ func TestAnalyzeDependencies_WithUnknownPackage(t *testing.T) {
 }
 
 func TestAnalyzeDependencies_WithInvalidDir(t *testing.T) {
+	t.Parallel()
+
 	in := tools.AnalyzeDependenciesInput{Dir: "/nonexistent/directory"}
 
 	_, _, err := tools.AnalyzeDependencies(context.Background(), &mcp.CallToolRequest{}, in)
@@ -337,6 +361,8 @@ func TestAnalyzeDependencies_WithInvalidDir(t *testing.T) {
 }
 
 func TestAnalyzeComplexity(t *testing.T) {
+	t.Parallel()
+
 	in := tools.AnalyzeComplexityInput{Dir: testDir()}
 
 	_, out, err := tools.AnalyzeComplexity(context.Background(), &mcp.CallToolRequest{}, in)
@@ -396,6 +422,8 @@ func TestAnalyzeComplexity_WithPackageFilter(t *testing.T) {
 		Package: pkgPath,
 	}
 
+	t.Parallel()
+
 	_, out, err := tools.AnalyzeComplexity(context.Background(), &mcp.CallToolRequest{}, in)
 	if err != nil {
 		t.Fatalf("AnalyzeComplexity error: %v", err)
@@ -424,6 +452,8 @@ func TestAnalyzeComplexity_WithUnknownPackage(t *testing.T) {
 		Package: "nonexistent/package",
 	}
 
+	t.Parallel()
+
 	_, _, err := tools.AnalyzeComplexity(context.Background(), &mcp.CallToolRequest{}, in)
 	if err == nil {
 		t.Fatalf("expected error for unknown package, got nil")
@@ -431,6 +461,8 @@ func TestAnalyzeComplexity_WithUnknownPackage(t *testing.T) {
 }
 
 func TestAnalyzeComplexity_WithInvalidDir(t *testing.T) {
+	t.Parallel()
+
 	in := tools.AnalyzeComplexityInput{Dir: "/nonexistent/directory"}
 
 	_, _, err := tools.AnalyzeComplexity(context.Background(), &mcp.CallToolRequest{}, in)
@@ -440,6 +472,8 @@ func TestAnalyzeComplexity_WithInvalidDir(t *testing.T) {
 }
 
 func TestMetricsSummary(t *testing.T) {
+	t.Parallel()
+
 	in := tools.MetricsSummaryInput{Dir: testDir()}
 
 	_, out, err := tools.MetricsSummary(context.Background(), &mcp.CallToolRequest{}, in)
@@ -501,6 +535,8 @@ func TestMetricsSummary_WithPackageFilter(t *testing.T) {
 		Package: pkgPath,
 	}
 
+	t.Parallel()
+
 	_, out, err := tools.MetricsSummary(context.Background(), &mcp.CallToolRequest{}, in)
 	if err != nil {
 		t.Fatalf("MetricsSummary error: %v", err)
@@ -524,6 +560,8 @@ func TestMetricsSummary_WithPackageFilter(t *testing.T) {
 }
 
 func TestMetricsSummary_WithUnknownPackage(t *testing.T) {
+	t.Parallel()
+
 	in := tools.MetricsSummaryInput{
 		Dir:     projectRoot(),
 		Package: "nonexistent/package",
@@ -536,6 +574,8 @@ func TestMetricsSummary_WithUnknownPackage(t *testing.T) {
 }
 
 func TestMetricsSummary_WithInvalidDir(t *testing.T) {
+	t.Parallel()
+
 	in := tools.MetricsSummaryInput{Dir: "/nonexistent/directory"}
 
 	_, _, err := tools.MetricsSummary(context.Background(), &mcp.CallToolRequest{}, in)
@@ -549,10 +589,14 @@ func projectRoot() string {
 }
 
 func toolsPackagePath(t *testing.T, dir string) string {
+	t.Helper()
+
 	return packagePathBySuffix(t, dir, "internal/tools")
 }
 
 func samplePackagePath(t *testing.T) string {
+	t.Helper()
+
 	return packagePathBySuffix(t, testDir(), "sample")
 }
 

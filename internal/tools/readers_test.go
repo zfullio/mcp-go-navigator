@@ -5,11 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go-navigator/internal/tools"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestReadFile_Summary(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ReadFileInput{Dir: testDir(), File: "foo.go", Mode: "summary"}
 
 	_, out, err := tools.ReadFile(context.Background(), &mcp.CallToolRequest{}, in)
@@ -48,6 +51,8 @@ func TestReadFile_Summary(t *testing.T) {
 }
 
 func TestReadFile_Raw(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ReadFileInput{Dir: testDir(), File: "foo.go", Mode: "raw"}
 
 	_, out, err := tools.ReadFile(context.Background(), &mcp.CallToolRequest{}, in)
@@ -65,6 +70,8 @@ func TestReadFile_Raw(t *testing.T) {
 }
 
 func TestReadFunc_Method(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ReadFuncInput{Dir: testDir(), Name: "Foo.DoSomething"}
 
 	_, out, err := tools.ReadFunc(context.Background(), &mcp.CallToolRequest{}, in)
@@ -91,6 +98,8 @@ func TestReadFunc_Method(t *testing.T) {
 }
 
 func TestReadStruct_WithMethods(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ReadStructInput{Dir: testDir(), Name: "Foo", IncludeMethods: true}
 
 	_, out, err := tools.ReadStruct(context.Background(), &mcp.CallToolRequest{}, in)

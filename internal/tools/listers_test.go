@@ -39,6 +39,8 @@ func TestListPackages(t *testing.T) {
 }
 
 func TestListPackages_WithEmptyDir(t *testing.T) {
+	t.Parallel()
+
 	tmpDir := t.TempDir()
 	in := tools.ListPackagesInput{Dir: tmpDir}
 
@@ -55,6 +57,8 @@ func TestListPackages_WithEmptyDir(t *testing.T) {
 }
 
 func TestListPackages_WithInvalidDir(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ListPackagesInput{Dir: "/nonexistent/directory"}
 
 	_, _, err := tools.ListPackages(context.Background(), &mcp.CallToolRequest{}, in)
@@ -64,6 +68,8 @@ func TestListPackages_WithInvalidDir(t *testing.T) {
 }
 
 func TestListSymbols_WithInvalidDir(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ListSymbolsInput{Dir: "/nonexistent/directory"}
 
 	_, _, err := tools.ListSymbols(context.Background(), &mcp.CallToolRequest{}, in)
@@ -73,6 +79,8 @@ func TestListSymbols_WithInvalidDir(t *testing.T) {
 }
 
 func TestListSymbols_WithInvalidPackage(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ListSymbolsInput{
 		Dir:     testDir(),
 		Package: "nonexistent/package",
@@ -89,6 +97,8 @@ func TestListSymbols_WithInvalidPackage(t *testing.T) {
 }
 
 func TestListSymbols_WithPackageFilter(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ListSymbolsInput{
 		Dir:     testDir(),
 		Package: "sample",
@@ -111,6 +121,8 @@ func TestListSymbols_WithPackageFilter(t *testing.T) {
 }
 
 func TestListImports(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ListImportsInput{Dir: testDir()}
 
 	_, out, err := tools.ListImports(context.Background(), &mcp.CallToolRequest{}, in)
@@ -147,6 +159,8 @@ func TestListImports(t *testing.T) {
 }
 
 func TestListImports_WithInvalidDir(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ListImportsInput{Dir: "/nonexistent/directory"}
 
 	_, _, err := tools.ListImports(context.Background(), &mcp.CallToolRequest{}, in)
@@ -156,6 +170,8 @@ func TestListImports_WithInvalidDir(t *testing.T) {
 }
 
 func TestListImports_WithInvalidPackage(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ListImportsInput{Dir: testDir(), Package: "nonexistent/package"}
 
 	_, _, err := tools.ListImports(context.Background(), &mcp.CallToolRequest{}, in)
@@ -165,6 +181,8 @@ func TestListImports_WithInvalidPackage(t *testing.T) {
 }
 
 func TestListImports_WithPackageFilter(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ListImportsInput{Dir: testDir(), Package: "sample"}
 
 	_, out, err := tools.ListImports(context.Background(), &mcp.CallToolRequest{}, in)
@@ -184,6 +202,8 @@ func TestListImports_WithPackageFilter(t *testing.T) {
 }
 
 func TestListInterfaces(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ListInterfacesInput{Dir: testDir()}
 
 	_, out, err := tools.ListInterfaces(context.Background(), &mcp.CallToolRequest{}, in)
@@ -239,6 +259,8 @@ func TestListInterfaces(t *testing.T) {
 }
 
 func TestListInterfaces_HandlesEmptyInterface(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ListInterfacesInput{Dir: testDir()}
 
 	_, out, err := tools.ListInterfaces(context.Background(), &mcp.CallToolRequest{}, in)
@@ -262,6 +284,8 @@ func TestListInterfaces_HandlesEmptyInterface(t *testing.T) {
 }
 
 func TestListInterfaces_WithInvalidDir(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ListInterfacesInput{Dir: "/nonexistent/directory"}
 
 	_, _, err := tools.ListInterfaces(context.Background(), &mcp.CallToolRequest{}, in)
@@ -271,6 +295,8 @@ func TestListInterfaces_WithInvalidDir(t *testing.T) {
 }
 
 func TestListInterfaces_WithInvalidPackage(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ListInterfacesInput{Dir: testDir(), Package: "nonexistent/package"}
 
 	_, _, err := tools.ListInterfaces(context.Background(), &mcp.CallToolRequest{}, in)
@@ -280,6 +306,8 @@ func TestListInterfaces_WithInvalidPackage(t *testing.T) {
 }
 
 func TestListInterfaces_WithPackageFilter(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ListInterfacesInput{Dir: testDir(), Package: "sample"}
 
 	_, out, err := tools.ListInterfaces(context.Background(), &mcp.CallToolRequest{}, in)
@@ -386,6 +414,8 @@ func TestProjectSchema_WithSummaryDepth(t *testing.T) {
 }
 
 func TestProjectSchema_WithInvalidDir(t *testing.T) {
+	t.Parallel()
+
 	in := tools.ProjectSchemaInput{Dir: "/nonexistent/directory"}
 
 	_, _, err := tools.ProjectSchema(context.Background(), &mcp.CallToolRequest{}, in)

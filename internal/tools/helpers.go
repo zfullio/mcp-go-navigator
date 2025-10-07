@@ -165,6 +165,7 @@ func walkPackageFiles(ctx context.Context, pkgs []*packages.Package, dir string,
 			}
 
 			relPath := resolveFilePath(pkg, dir, i, file)
+
 			err := fn(pkg, file, relPath, i)
 			if err != nil {
 				return err

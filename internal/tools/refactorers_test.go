@@ -53,6 +53,8 @@ func TestRenameSymbol(t *testing.T) {
 }
 
 func TestRenameSymbol_WithInvalidDir(t *testing.T) {
+	t.Parallel()
+
 	in := tools.RenameSymbolInput{
 		Dir:     "/nonexistent/directory",
 		OldName: "Foo",
@@ -66,6 +68,8 @@ func TestRenameSymbol_WithInvalidDir(t *testing.T) {
 }
 
 func TestRenameSymbol_WithSameNames(t *testing.T) {
+	t.Parallel()
+
 	in := tools.RenameSymbolInput{
 		Dir:     testDir(),
 		OldName: "Foo",
@@ -84,6 +88,8 @@ func TestRenameSymbol_WithSameNames(t *testing.T) {
 }
 
 func TestRenameSymbol_WithNonexistentSymbol(t *testing.T) {
+	t.Parallel()
+
 	in := tools.RenameSymbolInput{
 		Dir:     testDir(),
 		OldName: "NonexistentSymbol",
@@ -97,6 +103,8 @@ func TestRenameSymbol_WithNonexistentSymbol(t *testing.T) {
 }
 
 func TestRenameSymbol_DryRun(t *testing.T) {
+	t.Parallel()
+
 	dir := testDir()
 	tmpDir := t.TempDir()
 

@@ -106,6 +106,8 @@ func TestFindReferences(t *testing.T) {
 }
 
 func TestFindReferences_WithInvalidDir(t *testing.T) {
+	t.Parallel()
+
 	in := tools.FindReferencesInput{
 		Dir:   "/nonexistent/directory",
 		Ident: "Foo",
@@ -118,6 +120,8 @@ func TestFindReferences_WithInvalidDir(t *testing.T) {
 }
 
 func TestFindReferences_WithNonexistentIdent(t *testing.T) {
+	t.Parallel()
+
 	in := tools.FindReferencesInput{
 		Dir:   testDir(),
 		Ident: "NonexistentSymbol",
@@ -131,6 +135,8 @@ func TestFindReferences_WithNonexistentIdent(t *testing.T) {
 }
 
 func TestFindReferences_WithFileFilter(t *testing.T) {
+	t.Parallel()
+
 	in := tools.FindReferencesInput{
 		Dir:   testDir(),
 		Ident: "Foo",
@@ -163,6 +169,8 @@ func TestFindReferences_WithFileFilter(t *testing.T) {
 }
 
 func TestFindReferences_Pagination(t *testing.T) {
+	t.Parallel()
+
 	in := tools.FindReferencesInput{
 		Dir:    testDir(),
 		Ident:  "Foo",
@@ -264,6 +272,8 @@ func TestFindDefinitions(t *testing.T) {
 }
 
 func TestFindDefinitions_WithInvalidDir(t *testing.T) {
+	t.Parallel()
+
 	in := tools.FindDefinitionsInput{
 		Dir:   "/nonexistent/directory",
 		Ident: "Foo",
@@ -276,6 +286,8 @@ func TestFindDefinitions_WithInvalidDir(t *testing.T) {
 }
 
 func TestFindDefinitions_WithNonexistentIdent(t *testing.T) {
+	t.Parallel()
+
 	in := tools.FindDefinitionsInput{
 		Dir:   testDir(),
 		Ident: "NonexistentSymbol",
@@ -293,6 +305,8 @@ func TestFindDefinitions_WithNonexistentIdent(t *testing.T) {
 }
 
 func TestFindDefinitions_WithFileFilter(t *testing.T) {
+	t.Parallel()
+
 	in := tools.FindDefinitionsInput{
 		Dir:   testDir(),
 		Ident: "Foo",
@@ -325,6 +339,8 @@ func TestFindDefinitions_WithFileFilter(t *testing.T) {
 }
 
 func TestFindDefinitions_Pagination(t *testing.T) {
+	t.Parallel()
+
 	in := tools.FindDefinitionsInput{
 		Dir:    testDir(),
 		Ident:  "Foo",
@@ -372,6 +388,8 @@ func TestFindDefinitions_Pagination(t *testing.T) {
 }
 
 func TestFindImplementations(t *testing.T) {
+	t.Parallel()
+
 	in := tools.FindImplementationsInput{
 		Dir:  testDir(),
 		Name: "Storage", // Assuming there's a Storage interface in testdata
@@ -409,6 +427,8 @@ func TestFindImplementations(t *testing.T) {
 }
 
 func TestFindImplementations_WithInvalidDir(t *testing.T) {
+	t.Parallel()
+
 	in := tools.FindImplementationsInput{
 		Dir:  "/nonexistent/directory",
 		Name: "Storage",
@@ -421,6 +441,8 @@ func TestFindImplementations_WithInvalidDir(t *testing.T) {
 }
 
 func TestFindImplementations_WithNonexistentInterface(t *testing.T) {
+	t.Parallel()
+
 	in := tools.FindImplementationsInput{
 		Dir:  testDir(),
 		Name: "NonexistentInterface",
