@@ -43,6 +43,7 @@
 - `listPackages` — discover packages under `dir`.
 - `metricsSummary` — aggregate counts (packages/interfaces), average cyclomatic complexity, unused symbol ratios.
 - `analyzeDependencies` — dependency graph with fan-in/fan-out and cycle detection.
+- `projectSchema` — aggregate full structural metadata of a Go module including packages, symbols, interfaces, imports, and dependency graph. Supports configurable detail levels via `depth` parameter (summary, standard, or deep).
 
 **Structure & navigation**
 - `listSymbols` — returns `groupedSymbols[{package, files[{file, symbols[]}]}]` (no flat list).
@@ -75,12 +76,15 @@
 - `*_test.go` (e.g., `listers_test.go`, `finders_test.go`, `refactorers_test.go`): Decomposed test suites for each tool category: discovery (`listPackages`), navigation (`listSymbols`, `listImports`, `listInterfaces`, `findDefinitions`, `findReferences`, `findImplementations`), analysis (`analyzeComplexity`, `metricsSummary`, `deadCode`, `analyzeDependencies`), source readers (`readFile`, `readFunc`, `readStruct`), refactoring (`renameSymbol`, `astRewrite`), and `HealthCheck`. This structure allows for targeted testing of individual functionalities.
 
 ## Recommended Agent Flow
-1. Run `listPackages` from the module root to establish scope.
-2. Use `listSymbols`/`listInterfaces` for structure, relying on grouped results.
-3. Inspect imports or dependency topology via `listImports` and `analyzeDependencies`.
-4. Assess hotspots with `analyzeComplexity` and `deadCode`; drill down using `findReferences` / `findDefinitions`.
-5. For refactoring proposals, execute `renameSymbol` with `preview=true` and review the diff + collision report.
-6. When detailed source context is needed, fallback to `readFile`/`readFunc`/`readStruct` instead of raw file reads.
+1. Start with `projectSchema` using configurable `depth` parameter (summary, standard, or deep) to get comprehensive structural metadata of the Go module including packages, symbols, interfaces, imports, and dependency graph.
+2. Use `listPackages` to explore the overall package structure if needed.
+3. Examine symbols and interfaces with `listSymbols`/`listInterfaces` for detailed architecture understanding.
+4. Analyze dependencies and imports via `analyzeDependencies` and `listImports` to understand the project's topology.
+5. Assess code quality with `analyzeComplexity`, `metricsSummary`, and `deadCode` to identify hotspots and issues.
+6. Navigate to specific elements using `findDefinitions` and `findReferences` for detailed investigation.
+7. Use `findImplementations` to understand type hierarchies and interface relationships.
+8. For refactoring proposals, execute `renameSymbol` with `preview=true` and review the diff + collision report.
+9. When detailed source context is needed, use `readFile`/`readFunc`/`readStruct` to get specific code elements.
 
 ## Operational Notes
 - `helpers.go` still hosts the heavy AST comparison utilities (`compareASTNodes`), while `refactorers.go` carries the complex rename pipeline; treat both as prime refactor targets when feasible.

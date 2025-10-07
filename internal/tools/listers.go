@@ -507,12 +507,19 @@ func ProjectSchema(ctx context.Context, req *mcp.CallToolRequest, input ProjectS
 	out := ProjectSchemaOutput{}
 	defer func() { logEnd("ProjectSchema", start, len(out.Packages)) }()
 
-	mode := packages.NeedName |
-		packages.NeedCompiledGoFiles |
-		packages.NeedImports |
-		packages.NeedSyntax |
-		packages.NeedTypes |
-		packages.NeedTypesInfo
+	// Determine depth level
+	depth := input.Depth
+	if depth == "" {
+		depth = "standard" // default level
+	}
+
+	// Adjust analysis mode based on depth
+	mode := packages.NeedName | packages.NeedCompiledGoFiles
+	if depth == "standard" || depth == "deep" {
+		mode |= packages.NeedImports | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo
+	} else {
+		mode |= packages.NeedImports // minimal for summary
+	}
 
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
@@ -533,7 +540,7 @@ func ProjectSchema(ctx context.Context, req *mcp.CallToolRequest, input ProjectS
 	pkgMap := map[string]ProjectPackage{}
 	depGraph := map[string][]string{}
 	externalDeps := map[string]struct{}{}
-	allInterfaces := []ProjectInterface{}
+	var allInterfaces []ProjectInterface // Only initialize if needed for standard/deep mode
 
 	for _, pkg := range pkgs {
 		pkgPath := pkg.PkgPath
@@ -555,38 +562,40 @@ func ProjectSchema(ctx context.Context, req *mcp.CallToolRequest, input ProjectS
 			}
 		}
 
-		for i, file := range pkg.Syntax {
-			_ = i // keep consistent with your style, if relPath needed later
-			ast.Inspect(file, func(n ast.Node) bool {
-				switch ts := n.(type) {
-				case *ast.TypeSpec:
-					switch t := ts.Type.(type) {
-					case *ast.StructType:
-						symbols.Structs = append(symbols.Structs, ts.Name.Name)
-						structCount++
-					case *ast.InterfaceType:
-						methods := []string{}
-						if t.Methods != nil {
-							for _, m := range t.Methods.List {
-								if len(m.Names) > 0 {
-									methods = append(methods, m.Names[0].Name)
+		// Only analyze AST if we need detailed information
+		if depth == "standard" || depth == "deep" {
+			for _, file := range pkg.Syntax {
+				ast.Inspect(file, func(n ast.Node) bool {
+					switch ts := n.(type) {
+					case *ast.TypeSpec:
+						switch t := ts.Type.(type) {
+						case *ast.StructType:
+							symbols.Structs = append(symbols.Structs, ts.Name.Name)
+							structCount++
+						case *ast.InterfaceType:
+							methods := []string{}
+							if t.Methods != nil {
+								for _, m := range t.Methods.List {
+									if len(m.Names) > 0 {
+										methods = append(methods, m.Names[0].Name)
+									}
 								}
 							}
+							allInterfaces = append(allInterfaces, ProjectInterface{
+								Name: ts.Name.Name, DefinedIn: pkgPath, Methods: methods,
+							})
+							symbols.Interfaces = append(symbols.Interfaces, ts.Name.Name)
+							ifaceCount++
+						default:
+							symbols.Types = append(symbols.Types, ts.Name.Name)
 						}
-						allInterfaces = append(allInterfaces, ProjectInterface{
-							Name: ts.Name.Name, DefinedIn: pkgPath, Methods: methods,
-						})
-						symbols.Interfaces = append(symbols.Interfaces, ts.Name.Name)
-						ifaceCount++
-					default:
-						symbols.Types = append(symbols.Types, ts.Name.Name)
+					case *ast.FuncDecl:
+						symbols.Functions = append(symbols.Functions, ts.Name.Name)
+						funcCount++
 					}
-				case *ast.FuncDecl:
-					symbols.Functions = append(symbols.Functions, ts.Name.Name)
-					funcCount++
-				}
-				return true
-			})
+					return true
+				})
+			}
 		}
 
 		pkgMap[pkgPath] = ProjectPackage{
@@ -609,7 +618,12 @@ func ProjectSchema(ctx context.Context, req *mcp.CallToolRequest, input ProjectS
 	sort.Strings(out.ExternalDeps)
 
 	out.DependencyGraph = depGraph
-	out.Interfaces = allInterfaces
+
+	// Only include interfaces if we did detailed analysis
+	if depth == "standard" || depth == "deep" {
+		out.Interfaces = allInterfaces
+	}
+
 	out.Summary = ProjectSummary{
 		PackageCount:   len(out.Packages),
 		FunctionCount:  funcCount,

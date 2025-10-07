@@ -11,6 +11,16 @@ Go-Navigator-MCP is a Go-based Model Context Protocol (MCP) server that provides
 - **Rename Symbol**: Rename all occurrences of an identifier across Go source files in a directory
 - **List Imports**: List all import paths in Go files under a directory
 - **List Interfaces**: List all interfaces in Go files under a directory, including their methods
+- **Project Schema**: Aggregate full structural metadata of a Go module with configurable detail levels (summary, standard, deep)
+- **Analyze Complexity**: Analyze function metrics including cyclomatic complexity and nesting depth
+- **Detect Dead Code**: Find unused functions, variables, constants, and types within the Go project
+- **Analyze Dependencies**: Build a graph of dependencies between internal packages with fan-in/fan-out and cycle detection
+- **Find Implementations**: Show which concrete types implement interfaces (and vice versa)
+- **Metrics Summary**: Aggregate project metrics including package/struct/interface counts, average complexity, and unused code ratios
+- **AST Rewrite**: Pattern-driven AST transformations with type-aware understanding
+- **Read Function Source**: Get full source code and metadata of a Go function or method by name
+- **Read File**: Get package metadata, imports, and declared symbols from a Go source file
+- **Read Struct**: Get struct declaration including fields, tags, comments, and optionally associated methods
 
 ## Optimizations
 
@@ -119,6 +129,116 @@ Use with any MCP-compatible client to perform code analysis operations.
   "name": "listInterfaces",
   "arguments": {
     "dir": "/path/to/go/project"
+  }
+}
+```
+
+#### Project Schema
+```json
+{
+  "name": "projectSchema",
+  "arguments": {
+    "dir": "/path/to/go/project",
+    "depth": "standard"
+  }
+}
+```
+
+#### Analyze Complexity
+```json
+{
+  "name": "analyzeComplexity",
+  "arguments": {
+    "dir": "/path/to/go/project"
+  }
+}
+```
+
+#### Detect Dead Code
+```json
+{
+  "name": "deadCode",
+  "arguments": {
+    "dir": "/path/to/go/project"
+  }
+}
+```
+
+#### Analyze Dependencies
+```json
+{
+  "name": "analyzeDependencies",
+  "arguments": {
+    "dir": "/path/to/go/project"
+  }
+}
+```
+
+#### Find Implementations
+```json
+{
+  "name": "findImplementations",
+  "arguments": {
+    "dir": "/path/to/go/project",
+    "name": "InterfaceName"
+  }
+}
+```
+
+#### Metrics Summary
+```json
+{
+  "name": "metricsSummary",
+  "arguments": {
+    "dir": "/path/to/go/project"
+  }
+}
+```
+
+#### AST Rewrite
+```json
+{
+  "name": "astRewrite",
+  "arguments": {
+    "dir": "/path/to/go/project",
+    "find": "oldPattern(x)",
+    "replace": "newPattern(x)",
+    "dryRun": true
+  }
+}
+```
+
+#### Read Function Source
+```json
+{
+  "name": "readFunc",
+  "arguments": {
+    "dir": "/path/to/go/project",
+    "name": "FunctionName"
+  }
+}
+```
+
+#### Read File
+```json
+{
+  "name": "readFile",
+  "arguments": {
+    "dir": "/path/to/go/project",
+    "file": "relative/path/to/file.go",
+    "mode": "summary"
+  }
+}
+```
+
+#### Read Struct
+```json
+{
+  "name": "readStruct",
+  "arguments": {
+    "dir": "/path/to/go/project",
+    "name": "StructName",
+    "includeMethods": true
   }
 }
 ```

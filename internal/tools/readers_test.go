@@ -66,7 +66,7 @@ func TestReadFile_Raw(t *testing.T) {
 }
 
 func TestReadFunc_Method(t *testing.T) {
-	in := tools.ReadFuncInput{Dir: "/home/viktor-d/Programming/mgcom/Go/Services/wordstat-service", Name: "makeSendReportToDatabase"}
+	in := tools.ReadFuncInput{Dir: testDir(), Name: "Foo.DoSomething"}
 
 	_, out, err := tools.ReadFunc(context.Background(), &mcp.CallToolRequest{}, in)
 	if err != nil {

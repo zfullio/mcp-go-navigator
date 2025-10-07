@@ -221,6 +221,102 @@ func TestListInterfaces_WithInvalidDir(t *testing.T) {
 	}
 }
 
+func TestProjectSchema(t *testing.T) {
+	t.Parallel()
+
+	in := tools.ProjectSchemaInput{Dir: testDir()}
+
+	_, out, err := tools.ProjectSchema(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("ProjectSchema error: %v", err)
+	}
+
+	// Проверяем основные поля
+	if out.Module == "" {
+		t.Error("expected module name, got empty string")
+	}
+
+	if out.GoVersion == "" {
+		t.Error("expected go version, got empty string")
+	}
+
+	if out.RootDir != testDir() {
+		t.Errorf("expected root dir %s, got %s", testDir(), out.RootDir)
+	}
+
+	// Проверяем, что есть хотя бы один пакет
+	if len(out.Packages) == 0 {
+		t.Error("expected at least 1 package, got 0")
+	}
+
+	// Проверяем, что есть зависимости
+	if len(out.ExternalDeps) == 0 {
+		t.Error("expected at least 1 external dependency, got 0")
+	}
+
+	// Проверяем граф зависимостей
+	if len(out.DependencyGraph) == 0 {
+		t.Error("expected dependency graph with at least 1 entry, got 0")
+	}
+
+	// Проверяем сводку
+	if out.Summary.PackageCount == 0 {
+		t.Error("expected package count > 0 in summary")
+	}
+
+	// Проверяем, что интерфейсы присутствуют на стандартном уровне
+	if len(out.Interfaces) == 0 {
+		t.Error("expected at least 1 interface, got 0")
+	}
+}
+
+func TestProjectSchema_WithSummaryDepth(t *testing.T) {
+	t.Parallel()
+
+	in := tools.ProjectSchemaInput{
+		Dir:   testDir(),
+		Depth: "summary",
+	}
+
+	_, out, err := tools.ProjectSchema(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("ProjectSchema error: %v", err)
+	}
+
+	// Проверяем, что основные поля есть
+	if out.Module == "" {
+		t.Error("expected module name, got empty string")
+	}
+
+	if out.RootDir != testDir() {
+		t.Errorf("expected root dir %s, got %s", testDir(), out.RootDir)
+	}
+
+	// На уровне summary интерфейсы не должны быть включены
+	if len(out.Interfaces) > 0 {
+		t.Errorf("expected no interfaces for summary depth, got %d", len(out.Interfaces))
+	}
+
+	// Пакеты должны быть
+	if len(out.Packages) == 0 {
+		t.Error("expected at least 1 package, got 0")
+	}
+
+	// Сводка должна быть
+	if out.Summary.PackageCount == 0 {
+		t.Error("expected package count > 0 in summary")
+	}
+}
+
+func TestProjectSchema_WithInvalidDir(t *testing.T) {
+	in := tools.ProjectSchemaInput{Dir: "/nonexistent/directory"}
+
+	_, _, err := tools.ProjectSchema(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
 func BenchmarkListSymbols(b *testing.B) {
 	in := tools.ListSymbolsInput{
 		Dir:     benchDir(),

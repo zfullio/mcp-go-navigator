@@ -205,6 +205,10 @@ Aggregates a full structural schema of a Go project including:
 🪶 Use when:
 - You need a high-level overview of a Go module
 - You want to visualize or analyze package relationships
+- Supports configurable detail levels via 'depth' parameter:
+  * 'summary': minimal analysis with basic project metadata and package counts
+  * 'standard': full analysis including packages, symbols, interfaces, and dependencies (default)
+  * 'deep': extended analysis with additional detailed information (future extensibility)
 
 💡 Example:
 projectSchema { "dir": ".", "depth": "standard" }
