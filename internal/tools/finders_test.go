@@ -9,6 +9,40 @@ import (
 	"go-navigator/internal/tools"
 )
 
+type flatReference struct {
+	file  string
+	entry tools.ReferenceEntry
+}
+
+func flattenReferences(groups []tools.ReferenceGroup) []flatReference {
+	var result []flatReference
+
+	for _, group := range groups {
+		for _, ref := range group.References {
+			result = append(result, flatReference{file: group.File, entry: ref})
+		}
+	}
+
+	return result
+}
+
+type flatDefinition struct {
+	file  string
+	entry tools.DefinitionEntry
+}
+
+func flattenDefinitions(groups []tools.DefinitionGroup) []flatDefinition {
+	var result []flatDefinition
+
+	for _, group := range groups {
+		for _, def := range group.Definitions {
+			result = append(result, flatDefinition{file: group.File, entry: def})
+		}
+	}
+
+	return result
+}
+
 func TestFindReferences(t *testing.T) {
 	t.Parallel()
 
@@ -22,17 +56,19 @@ func TestFindReferences(t *testing.T) {
 		t.Fatalf("FindReferences error: %v", err)
 	}
 
-	if len(out.References) == 0 {
+	refs := flattenReferences(out.Groups)
+
+	if len(refs) == 0 {
 		t.Fatalf("expected to find references to Foo, got 0")
 	}
 
 	var foundDef, foundUsage bool
 
-	for _, ref := range out.References {
+	for _, ref := range refs {
 		switch {
-		case strings.Contains(ref.Snippet, "type Foo struct"):
+		case strings.Contains(ref.entry.Snippet, "type Foo struct"):
 			foundDef = true
-		case strings.Contains(ref.Snippet, "UseFoo(") || strings.Contains(ref.Snippet, "DoSomething("):
+		case strings.Contains(ref.entry.Snippet, "UseFoo(") || strings.Contains(ref.entry.Snippet, "DoSomething("):
 			foundUsage = true
 		}
 	}
@@ -45,6 +81,10 @@ func TestFindReferences(t *testing.T) {
 		t.Error("expected to find usage of Foo (UseFoo / DoSomething), but not found")
 	}
 
+	if out.Total != len(refs) {
+		t.Errorf("expected Total (%d) to equal number of references (%d)", out.Total, len(refs))
+	}
+
 	// ✅ Проверяем, что фильтрация по Kind=type возвращает только типы Foo
 	in.Kind = "type"
 
@@ -53,13 +93,15 @@ func TestFindReferences(t *testing.T) {
 		t.Fatalf("FindReferences (Kind=type) error: %v", err)
 	}
 
-	if len(typedOut.References) == 0 {
+	typedRefs := flattenReferences(typedOut.Groups)
+
+	if len(typedRefs) == 0 {
 		t.Errorf("expected to find references when Kind=type, got 0")
 	}
 
-	if len(typedOut.References) > len(out.References) {
+	if len(typedRefs) > len(refs) {
 		t.Errorf("expected Kind=type to return <= all references, got %d > %d",
-			len(typedOut.References), len(out.References))
+			len(typedRefs), len(refs))
 	}
 }
 
@@ -101,9 +143,9 @@ func TestFindReferences_WithFileFilter(t *testing.T) {
 	}
 
 	// Should only find references in foo.go
-	for _, ref := range out.References {
-		if !strings.HasSuffix(ref.File, "foo.go") {
-			t.Errorf("expected reference in foo.go, found in %s", ref.File)
+	for _, group := range out.Groups {
+		if !strings.HasSuffix(group.File, "foo.go") {
+			t.Errorf("expected reference group in foo.go, found in %s", group.File)
 		}
 	}
 
@@ -115,8 +157,63 @@ func TestFindReferences_WithFileFilter(t *testing.T) {
 		t.Fatalf("FindReferences error with non-existent file: %v", err)
 	}
 
-	if len(out2.References) > 0 {
-		t.Errorf("expected no references when filtering by non-existent file, got %d", len(out2.References))
+	if out2.Total != 0 {
+		t.Errorf("expected no references when filtering by non-existent file, got total %d", out2.Total)
+	}
+}
+
+func TestFindReferences_Pagination(t *testing.T) {
+	in := tools.FindReferencesInput{
+		Dir:    testDir(),
+		Ident:  "Foo",
+		Limit:  2,
+		Offset: 0,
+	}
+
+	_, limitedOut, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindReferences error: %v", err)
+	}
+
+	limitedRefs := flattenReferences(limitedOut.Groups)
+
+	if len(limitedRefs) != 2 {
+		t.Fatalf("expected 2 references with limit=2, got %d", len(limitedRefs))
+	}
+
+	if limitedOut.Offset != 0 {
+		t.Errorf("expected offset 0, got %d", limitedOut.Offset)
+	}
+
+	if limitedOut.Limit != 2 {
+		t.Errorf("expected limit 2, got %d", limitedOut.Limit)
+	}
+
+	if limitedOut.Total < len(limitedRefs) {
+		t.Errorf("expected total >= returned references (%d), got %d", len(limitedRefs), limitedOut.Total)
+	}
+
+	// Fetch the next reference via offset=1 limit=1
+	in.Offset = 1
+	in.Limit = 1
+
+	_, pageOut, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindReferences (pagination) error: %v", err)
+	}
+
+	pageRefs := flattenReferences(pageOut.Groups)
+
+	if len(pageRefs) != 1 {
+		t.Fatalf("expected 1 reference with limit=1 offset=1, got %d", len(pageRefs))
+	}
+
+	if pageOut.Offset != 1 {
+		t.Errorf("expected offset 1, got %d", pageOut.Offset)
+	}
+
+	if pageOut.Total != limitedOut.Total {
+		t.Errorf("expected total to remain consistent (%d vs %d)", limitedOut.Total, pageOut.Total)
 	}
 }
 
@@ -133,14 +230,16 @@ func TestFindDefinitions(t *testing.T) {
 		t.Fatalf("FindDefinitions error: %v", err)
 	}
 
-	if len(out.Definitions) == 0 {
+	defs := flattenDefinitions(out.Groups)
+
+	if len(defs) == 0 {
 		t.Fatalf("expected definitions of Foo, got 0")
 	}
 
 	foundType := false
 
-	for _, d := range out.Definitions {
-		if strings.Contains(d.Snippet, "type Foo struct") {
+	for _, d := range defs {
+		if strings.Contains(d.entry.Snippet, "type Foo struct") {
 			foundType = true
 
 			break
@@ -148,7 +247,7 @@ func TestFindDefinitions(t *testing.T) {
 	}
 
 	if !foundType {
-		t.Errorf("expected definition 'type Foo struct', got %+v", out.Definitions)
+		t.Errorf("expected definition 'type Foo struct', got %+v", defs)
 	}
 
 	// Дополнительный кейс: проверим, что можно уточнить тип
@@ -159,7 +258,7 @@ func TestFindDefinitions(t *testing.T) {
 		t.Fatalf("FindDefinitions (Kind=type) error: %v", err)
 	}
 
-	if len(typedOut.Definitions) == 0 {
+	if len(flattenDefinitions(typedOut.Groups)) == 0 {
 		t.Errorf("expected to find type Foo when Kind=type, got 0")
 	}
 }
@@ -188,8 +287,8 @@ func TestFindDefinitions_WithNonexistentIdent(t *testing.T) {
 	}
 
 	// Should return empty result for non-existent identifier
-	if len(out.Definitions) != 0 {
-		t.Errorf("expected 0 definitions for non-existent symbol, got %v", len(out.Definitions))
+	if out.Total != 0 {
+		t.Errorf("expected 0 definitions for non-existent symbol, got total %v", out.Total)
 	}
 }
 
@@ -206,9 +305,9 @@ func TestFindDefinitions_WithFileFilter(t *testing.T) {
 	}
 
 	// Should only find definitions in foo.go
-	for _, def := range out.Definitions {
-		if !strings.HasSuffix(def.File, "foo.go") {
-			t.Errorf("expected definition in foo.go, found in %s", def.File)
+	for _, group := range out.Groups {
+		if !strings.HasSuffix(group.File, "foo.go") {
+			t.Errorf("expected definition group in foo.go, found in %s", group.File)
 		}
 	}
 
@@ -220,8 +319,55 @@ func TestFindDefinitions_WithFileFilter(t *testing.T) {
 		t.Fatalf("FindDefinitions error with non-existent file: %v", err)
 	}
 
-	if len(out2.Definitions) > 0 {
-		t.Errorf("expected no definitions when filtering by non-existent file, got %d", len(out2.Definitions))
+	if out2.Total != 0 {
+		t.Errorf("expected no definitions when filtering by non-existent file, got total %d", out2.Total)
+	}
+}
+
+func TestFindDefinitions_Pagination(t *testing.T) {
+	in := tools.FindDefinitionsInput{
+		Dir:    testDir(),
+		Ident:  "Foo",
+		Limit:  1,
+		Offset: 0,
+	}
+
+	_, limitedOut, err := tools.FindDefinitions(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindDefinitions error: %v", err)
+	}
+
+	defs := flattenDefinitions(limitedOut.Groups)
+	if len(defs) != 1 {
+		t.Fatalf("expected 1 definition with limit=1, got %d", len(defs))
+	}
+
+	if limitedOut.Offset != 0 {
+		t.Errorf("expected offset 0, got %d", limitedOut.Offset)
+	}
+
+	if limitedOut.Limit != 1 {
+		t.Errorf("expected limit 1, got %d", limitedOut.Limit)
+	}
+
+	// Offset beyond total should yield zero groups but retain total count
+	in.Offset = 5
+
+	_, pageOut, err := tools.FindDefinitions(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindDefinitions (pagination) error: %v", err)
+	}
+
+	if len(pageOut.Groups) != 0 {
+		t.Fatalf("expected 0 definition groups with offset beyond total, got %d", len(pageOut.Groups))
+	}
+
+	if pageOut.Offset != limitedOut.Total {
+		t.Errorf("expected offset to clamp to total (%d), got %d", limitedOut.Total, pageOut.Offset)
+	}
+
+	if pageOut.Total != limitedOut.Total {
+		t.Errorf("expected total to remain consistent (%d vs %d)", limitedOut.Total, pageOut.Total)
 	}
 }
 

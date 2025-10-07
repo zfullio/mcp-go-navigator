@@ -86,22 +86,38 @@ type FindReferencesInput struct {
 	File string `json:"file,omitempty" jsonschema:"Optional relative file path to restrict the search"`
 	// Kind - filter by symbol type (e.g. func, type, var, const)
 	Kind string `json:"kind,omitempty" jsonschema:"Filter by symbol kind (e.g. func, type, var, const)"`
+	// Limit - maximum number of references to return (0 means no limit)
+	Limit int `json:"limit,omitempty" jsonschema:"Maximum number of references to return (0 means no limit)"`
+	// Offset - number of references to skip before returning results
+	Offset int `json:"offset,omitempty" jsonschema:"Number of references to skip before returning results"`
 }
 
-// Reference represents a reference to a symbol in Go code.
-type Reference struct {
-	// File - relative path to the file containing the reference
-	File string `json:"file" jsonschema:"Relative path to the file containing the reference"`
+// ReferenceEntry represents a reference occurrence within a file.
+type ReferenceEntry struct {
 	// Line - line number of the reference
 	Line int `json:"line" jsonschema:"Line number of the reference"`
 	// Snippet - code context showing the reference usage
 	Snippet string `json:"snippet" jsonschema:"Code context showing the reference usage"`
 }
 
+// ReferenceGroup groups references by file.
+type ReferenceGroup struct {
+	// File - relative path to the file containing the references
+	File string `json:"file" jsonschema:"Relative path to the file containing the references"`
+	// References - list of reference occurrences within the file
+	References []ReferenceEntry `json:"references" jsonschema:"List of reference occurrences within the file"`
+}
+
 // FindReferencesOutput contains results from the FindReferences tool.
 type FindReferencesOutput struct {
-	// References - list of all found references to the given identifier
-	References []Reference `json:"references" jsonschema:"List of all found references to the given identifier"`
+	// Total - total number of references that were found (before pagination)
+	Total int `json:"total" jsonschema:"Total number of references found before pagination"`
+	// Offset - number of references skipped before returning results
+	Offset int `json:"offset" jsonschema:"Number of references skipped before returning results"`
+	// Limit - maximum number of references returned (0 when no limit was applied)
+	Limit int `json:"limit,omitempty" jsonschema:"Maximum number of references returned (0 when no limit was applied)"`
+	// Groups - references grouped by file
+	Groups []ReferenceGroup `json:"groups,omitempty" jsonschema:"References grouped by file"`
 }
 
 // ------------------ find definitions ------------------
@@ -116,22 +132,38 @@ type FindDefinitionsInput struct {
 	File string `json:"file,omitempty" jsonschema:"Optional relative file path to restrict the search"`
 	// Kind - filter by symbol type (e.g. func, type, var, const)
 	Kind string `json:"kind,omitempty" jsonschema:"Filter by symbol kind (e.g. func, type, var, const)"`
+	// Limit - maximum number of definitions to return (0 means no limit)
+	Limit int `json:"limit,omitempty" jsonschema:"Maximum number of definitions to return (0 means no limit)"`
+	// Offset - number of definitions to skip before returning results
+	Offset int `json:"offset,omitempty" jsonschema:"Number of definitions to skip before returning results"`
 }
 
-// Definition represents a symbol definition in Go code.
-type Definition struct {
-	// File - relative path to the file where the symbol is defined
-	File string `json:"file" jsonschema:"Relative path to the file where the symbol is defined"`
+// DefinitionEntry represents a definition occurrence within a file.
+type DefinitionEntry struct {
 	// Line - line number of the definition
 	Line int `json:"line" jsonschema:"Line number of the definition"`
 	// Snippet - code snippet showing the definition line
 	Snippet string `json:"snippet" jsonschema:"Code snippet showing the definition line"`
 }
 
+// DefinitionGroup groups symbol definitions by file.
+type DefinitionGroup struct {
+	// File - relative path to the file where the symbol is defined
+	File string `json:"file" jsonschema:"Relative path to the file where the symbol is defined"`
+	// Definitions - list of definition occurrences within the file
+	Definitions []DefinitionEntry `json:"definitions" jsonschema:"List of definition occurrences within the file"`
+}
+
 // FindDefinitionsOutput contains results from the FindDefinitions tool.
 type FindDefinitionsOutput struct {
-	// Definitions - list of found symbol definitions
-	Definitions []Definition `json:"definitions" jsonschema:"List of found symbol definitions"`
+	// Total - total number of definitions that were found (before pagination)
+	Total int `json:"total" jsonschema:"Total number of definitions found before pagination"`
+	// Offset - number of definitions skipped before returning results
+	Offset int `json:"offset" jsonschema:"Number of definitions skipped before returning results"`
+	// Limit - maximum number of definitions returned (0 when no limit was applied)
+	Limit int `json:"limit,omitempty" jsonschema:"Maximum number of definitions returned (0 when no limit was applied)"`
+	// Groups - definitions grouped by file
+	Groups []DefinitionGroup `json:"groups,omitempty" jsonschema:"Definitions grouped by file"`
 }
 
 // ------------------ list imports ------------------
@@ -140,6 +172,8 @@ type FindDefinitionsOutput struct {
 type ListImportsInput struct {
 	// Dir - root directory to scan for Go files
 	Dir string `json:"dir" jsonschema:"Root directory to scan for Go files"`
+	// Package - optional package path to restrict results
+	Package string `json:"package,omitempty" jsonschema:"Optional Go package path to restrict the scan"`
 }
 
 // Import represents an import of a package in a Go file.
@@ -180,6 +214,8 @@ type ListImportsOutput struct {
 type ListInterfacesInput struct {
 	// Dir - root directory to scan for Go files
 	Dir string `json:"dir" jsonschema:"Root directory to scan for Go files"`
+	// Package - optional package path to restrict results
+	Package string `json:"package,omitempty" jsonschema:"Optional Go package path to restrict the scan"`
 }
 
 // InterfaceMethod represents an interface method.
@@ -222,6 +258,8 @@ type ListInterfacesOutput struct {
 type AnalyzeComplexityInput struct {
 	// Dir - root directory to scan for Go files
 	Dir string `json:"dir" jsonschema:"Root directory to scan for Go files"`
+	// Package - optional package path to restrict results
+	Package string `json:"package,omitempty" jsonschema:"Optional Go package path to restrict the scan"`
 }
 
 // FunctionComplexityGroupByFile represents symbols grouped by file within a package.
@@ -275,6 +313,10 @@ type DeadCodeInput struct {
 	Dir string `json:"dir" jsonschema:"Root directory to scan for unused symbols"`
 	// IncludeExported - if true, includes exported symbols that are unused
 	IncludeExported bool `json:"includeExported,omitempty" jsonschema:"If true, include exported symbols that are unused"`
+	// Limit - optional maximum number of unused symbols to return (0 means no limit)
+	Limit int `json:"limit,omitempty" jsonschema:"Optional maximum number of unused symbols to include in the response (0 means no limit)"`
+	// Package - optional package path to restrict the scan
+	Package string `json:"package,omitempty" jsonschema:"Optional Go package path to restrict the scan"`
 }
 
 // DeadSymbol represents an unused symbol in Go code.
@@ -303,6 +345,10 @@ type DeadCodeOutput struct {
 	ExportedCount int `json:"exportedCount" jsonschema:"Number of exported symbols that are unused"`
 	// ByPackage - count of unused symbols grouped by package
 	ByPackage map[string]int `json:"byPackage" jsonschema:"Count of unused symbols grouped by package"`
+	// ByKind - count of unused symbols grouped by symbol kind (func, var, const, type)
+	ByKind map[string]int `json:"byKind,omitempty" jsonschema:"Count of unused symbols grouped by symbol kind (func, var, const, type)"`
+	// HasMore - true when the response was limited and more results are available
+	HasMore bool `json:"hasMore,omitempty" jsonschema:"True if more unused symbols exist beyond the returned list"`
 }
 
 // ------------------ rename symbol ------------------
@@ -345,6 +391,8 @@ type RenameSymbolOutput struct {
 type AnalyzeDependenciesInput struct {
 	// Dir - root directory to scan for package dependencies
 	Dir string `json:"dir" jsonschema:"Root directory to scan for package dependencies"`
+	// Package - optional package path to restrict results
+	Package string `json:"package,omitempty" jsonschema:"Optional Go package path to restrict the scan"`
 }
 
 // PackageDependency represents information about package dependencies.
@@ -403,6 +451,8 @@ type FindImplementationsOutput struct {
 type MetricsSummaryInput struct {
 	// Dir - root directory to scan for project metrics
 	Dir string `json:"dir" jsonschema:"Root directory to scan for project metrics"`
+	// Package - optional package path to restrict metrics aggregation
+	Package string `json:"package,omitempty" jsonschema:"Optional Go package path to restrict metrics aggregation"`
 }
 
 // MetricsSummaryOutput contains results from the MetricsSummary tool.
@@ -565,7 +615,8 @@ type ReadStructOutput struct {
 	Struct StructInfo `json:"struct" jsonschema:"Description of the found struct"`
 }
 
-// ---
+// ------------------ project schema ------------------
+
 // ProjectSchemaInput defines input parameters for the ProjectSchema tool.
 type ProjectSchemaInput struct {
 	// Dir - root directory of the Go module to analyze

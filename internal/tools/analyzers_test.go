@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -39,6 +40,48 @@ func TestDeadCode(t *testing.T) {
 	}
 }
 
+func TestDeadCode_WithPackageFilter(t *testing.T) {
+	dir := testDir()
+	pkgPath := samplePackagePath(t)
+
+	in := tools.DeadCodeInput{
+		Dir:             dir,
+		Package:         pkgPath,
+		IncludeExported: true,
+	}
+
+	_, out, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("DeadCode error: %v", err)
+	}
+
+	expected := filepath.ToSlash(pkgPath)
+
+	for _, symbol := range out.Unused {
+		if filepath.ToSlash(symbol.Package) != expected {
+			t.Fatalf("unexpected package %s in results (expected %s)", symbol.Package, pkgPath)
+		}
+	}
+
+	for pkg := range out.ByPackage {
+		if filepath.ToSlash(pkg) != expected {
+			t.Fatalf("unexpected package key %s in aggregated results (expected %s)", pkg, pkgPath)
+		}
+	}
+}
+
+func TestDeadCode_WithUnknownPackage(t *testing.T) {
+	in := tools.DeadCodeInput{
+		Dir:     testDir(),
+		Package: "nonexistent/package",
+	}
+
+	_, _, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for unknown package, got nil")
+	}
+}
+
 func TestDeadCodeExtended(t *testing.T) {
 	in := tools.DeadCodeInput{
 		Dir:             testDir(),
@@ -62,6 +105,14 @@ func TestDeadCodeExtended(t *testing.T) {
 
 	if len(out.ByPackage) == 0 {
 		t.Errorf("expected ByPackage to have entries, got empty map")
+	}
+
+	if len(out.ByKind) == 0 {
+		t.Errorf("expected ByKind to have entries, got empty map")
+	}
+
+	if out.HasMore {
+		t.Errorf("did not expect HasMore when no limit is set")
 	}
 
 	// Count exported symbols in the results
@@ -101,6 +152,10 @@ func TestDeadCodeExtended(t *testing.T) {
 
 	if exportedCount2 > 0 {
 		t.Errorf("expected no exported symbols when IncludeExported=false, but found %d", exportedCount2)
+	}
+
+	if out2.HasMore {
+		t.Errorf("did not expect HasMore when no limit is set (second run)")
 	}
 }
 
@@ -176,6 +231,31 @@ func TestDeadCode_AllKinds(t *testing.T) {
 	}
 }
 
+func TestDeadCode_WithLimit(t *testing.T) {
+	in := tools.DeadCodeInput{Dir: testDir(), Limit: 2}
+
+	_, out, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("DeadCode error: %v", err)
+	}
+
+	if len(out.Unused) != 2 {
+		t.Fatalf("expected exactly 2 unused symbols due to limit, got %d", len(out.Unused))
+	}
+
+	if !out.HasMore {
+		t.Fatalf("expected HasMore to be true when limit is applied and more results exist")
+	}
+
+	if out.TotalCount <= len(out.Unused) {
+		t.Fatalf("expected TotalCount (%d) to exceed returned unused symbols (%d)", out.TotalCount, len(out.Unused))
+	}
+
+	if len(out.ByKind) == 0 {
+		t.Fatalf("expected ByKind to be populated")
+	}
+}
+
 func TestAnalyzeDependencies(t *testing.T) {
 	in := tools.AnalyzeDependenciesInput{Dir: testDir()}
 
@@ -206,6 +286,44 @@ func TestAnalyzeDependencies(t *testing.T) {
 	// Check for dependency cycles (there shouldn't be any in sample data)
 	if len(out.Cycles) > 0 {
 		t.Logf("Found dependency cycles: %+v", out.Cycles)
+	}
+}
+
+func TestAnalyzeDependencies_WithPackageFilter(t *testing.T) {
+	dir := projectRoot()
+	pkgPath := toolsPackagePath(t, dir)
+
+	in := tools.AnalyzeDependenciesInput{
+		Dir:     dir,
+		Package: pkgPath,
+	}
+
+	_, out, err := tools.AnalyzeDependencies(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("AnalyzeDependencies error: %v", err)
+	}
+
+	if len(out.Dependencies) == 0 {
+		t.Fatalf("expected dependencies for filtered package, got 0")
+	}
+
+	for _, dep := range out.Dependencies {
+		if dep.Package != pkgPath {
+			t.Fatalf("expected only package %s, got %s", pkgPath, dep.Package)
+		}
+	}
+}
+
+func TestAnalyzeDependencies_WithUnknownPackage(t *testing.T) {
+	dir := projectRoot()
+	in := tools.AnalyzeDependenciesInput{
+		Dir:     dir,
+		Package: "nonexistent/package",
+	}
+
+	_, _, err := tools.AnalyzeDependencies(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for unknown package, got nil")
 	}
 }
 
@@ -266,6 +384,49 @@ func TestAnalyzeComplexity(t *testing.T) {
 		if f.Nesting < 2 {
 			t.Errorf("expected WithLoopAndSwitch nesting>=2, got %d", f.Nesting)
 		}
+	}
+}
+
+func TestAnalyzeComplexity_WithPackageFilter(t *testing.T) {
+	dir := projectRoot()
+	pkgPath := toolsPackagePath(t, dir)
+
+	in := tools.AnalyzeComplexityInput{
+		Dir:     dir,
+		Package: pkgPath,
+	}
+
+	_, out, err := tools.AnalyzeComplexity(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("AnalyzeComplexity error: %v", err)
+	}
+
+	if len(out.Functions) == 0 {
+		t.Fatalf("expected function groups for filtered package, got 0")
+	}
+
+	if normalized := filepath.ToSlash(pkgPath); !strings.HasSuffix(normalized, "/internal/tools") && normalized != "internal/tools" {
+		t.Fatalf("unexpected package path for internal/tools: %s", pkgPath)
+	}
+
+	for _, group := range out.Functions {
+		file := filepath.ToSlash(group.File)
+		if !strings.HasPrefix(file, "internal/tools/") {
+			t.Fatalf("unexpected file %s for filtered package", group.File)
+		}
+	}
+}
+
+func TestAnalyzeComplexity_WithUnknownPackage(t *testing.T) {
+	dir := projectRoot()
+	in := tools.AnalyzeComplexityInput{
+		Dir:     dir,
+		Package: "nonexistent/package",
+	}
+
+	_, _, err := tools.AnalyzeComplexity(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for unknown package, got nil")
 	}
 }
 
@@ -331,6 +492,49 @@ func TestMetricsSummary(t *testing.T) {
 	// Basic metrics should be computed
 }
 
+func TestMetricsSummary_WithPackageFilter(t *testing.T) {
+	dir := projectRoot()
+	pkgPath := toolsPackagePath(t, dir)
+
+	in := tools.MetricsSummaryInput{
+		Dir:     dir,
+		Package: pkgPath,
+	}
+
+	_, out, err := tools.MetricsSummary(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("MetricsSummary error: %v", err)
+	}
+
+	if out.PackageCount != 1 {
+		t.Fatalf("expected package count 1, got %d", out.PackageCount)
+	}
+
+	if out.FunctionCount < 0 {
+		t.Fatalf("expected non-negative function count, got %d", out.FunctionCount)
+	}
+
+	if out.LineCount < 0 {
+		t.Fatalf("expected non-negative line count, got %d", out.LineCount)
+	}
+
+	if out.DeadCodeCount < 0 || out.ExportedUnusedCount < 0 {
+		t.Fatalf("expected non-negative dead code counts, got %d/%d", out.DeadCodeCount, out.ExportedUnusedCount)
+	}
+}
+
+func TestMetricsSummary_WithUnknownPackage(t *testing.T) {
+	in := tools.MetricsSummaryInput{
+		Dir:     projectRoot(),
+		Package: "nonexistent/package",
+	}
+
+	_, _, err := tools.MetricsSummary(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for unknown package, got nil")
+	}
+}
+
 func TestMetricsSummary_WithInvalidDir(t *testing.T) {
 	in := tools.MetricsSummaryInput{Dir: "/nonexistent/directory"}
 
@@ -338,6 +542,40 @@ func TestMetricsSummary_WithInvalidDir(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for non-existent directory, got nil")
 	}
+}
+
+func projectRoot() string {
+	return filepath.Clean(filepath.Join(testDir(), "..", "..", "..", ".."))
+}
+
+func toolsPackagePath(t *testing.T, dir string) string {
+	return packagePathBySuffix(t, dir, "internal/tools")
+}
+
+func samplePackagePath(t *testing.T) string {
+	return packagePathBySuffix(t, testDir(), "sample")
+}
+
+func packagePathBySuffix(t *testing.T, dir, suffix string) string {
+	t.Helper()
+
+	_, out, err := tools.ListPackages(context.Background(), &mcp.CallToolRequest{}, tools.ListPackagesInput{Dir: dir})
+	if err != nil {
+		t.Fatalf("ListPackages error: %v", err)
+	}
+
+	target := strings.TrimPrefix(filepath.ToSlash(suffix), "/")
+
+	for _, pkgPath := range out.Packages {
+		normalized := strings.TrimPrefix(filepath.ToSlash(pkgPath), "/")
+		if normalized == target || strings.HasSuffix(normalized, "/"+target) {
+			return pkgPath
+		}
+	}
+
+	t.Fatalf("package with suffix %q not found in %v", suffix, out.Packages)
+
+	return ""
 }
 
 func BenchmarkDeadCode(b *testing.B) {

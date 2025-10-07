@@ -23,8 +23,11 @@ Use when:
 - You want to explore available code entities before refactoring or documentation.
 - Useful before using findDefinitions or renameSymbol.
 
+Notes:
+- Provide the package path exactly as reported by 'go list' (for example, 'go-navigator/internal/tools').
+
 Example:
-listSymbols { "dir": ".", "package": "./internal/tools" }
+listSymbols { "dir": ".", "package": "go-navigator/internal/tools" }
 `
 
 // FindDefinitionsDesc describes the findDefinitions tool.
@@ -34,6 +37,10 @@ Locates where a symbol is defined (type, func, var, const).
 Use when:
 - You need to find where a symbol is declared or defined.
 - Ideal for navigation, documentation, or analysis.
+
+Notes:
+- Results are grouped by file with total counts.
+- Use optional "limit" and "offset" to paginate large result sets.
 
 Example:
 findDefinitions { "dir": ".", "ident": "TaskService" }
@@ -46,6 +53,10 @@ Finds all references and usages of an identifier using go/types semantic analysi
 Use when:
 - You want to check where a symbol is used before renaming or deleting it.
 - Ideal companion to findDefinitions.
+
+Notes:
+- Results are grouped by file with total counts.
+- Use optional "limit" and "offset" to paginate large result sets.
 
 Example:
 findReferences { "dir": ".", "ident": "TaskService" }
@@ -71,8 +82,11 @@ Use when:
 - You want to inspect dependencies at the file level.
 - Useful for dependency analysis or cleanup of unused imports.
 
+Notes:
+- Optionally filter by package path as reported by 'go list' (for example, 'go-navigator/internal/tools').
+
 Example:
-listImports { "dir": "." }
+listImports { "dir": ".", "package": "go-navigator/internal/tools" }
 `
 
 // ListInterfacesDesc describes the listInterfaces tool.
@@ -83,8 +97,11 @@ Use when:
 - You want to identify abstractions or create mocks.
 - Helps locate key interfaces for testing or refactoring.
 
+Notes:
+- Optionally filter by package path as reported by 'go list' (for example, 'go-navigator/internal/tools').
+
 Example:
-listInterfaces { "dir": "." }
+listInterfaces { "dir": ".", "package": "go-navigator/internal/tools" }
 `
 
 // AnalyzeComplexityDesc describes the analyzeComplexity tool.
@@ -94,9 +111,10 @@ Analyzes function metrics: lines of code, nesting depth, and cyclomatic complexi
 Use when:
 - You want to find complex functions to refactor or simplify.
 - Great for technical debt analysis and code reviews.
+- Optionally scope analysis to a specific package path (e.g. "go-navigator/internal/tools").
 
 Example:
-analyzeComplexity { "dir": "." }
+analyzeComplexity { "dir": ".", "package": "go-navigator/internal/tools" }
 `
 
 // DeadCodeDesc describes the deadCode tool.
@@ -106,9 +124,11 @@ Finds unused functions, variables, constants, and types within the Go project.
 Use when:
 - You want to identify dead or unreferenced code.
 - Useful before cleanup or preparing a release.
+- Need per-kind and per-package counts with optional result limiting.
+- Optionally restrict scanning to a specific package path (e.g. "go-navigator/internal/tools").
 
 Example:
-deadCode { "dir": "." }
+deadCode { "dir": ".", "package": "go-navigator/internal/tools", "limit": 10 }
 `
 
 // AnalyzeDependenciesDesc describes the analyzeDependencies tool.
@@ -118,9 +138,10 @@ Builds a graph of dependencies between internal packages (imports, cycles, fan-i
 Use when:
 - You need to understand coupling between packages.
 - Useful for architecture review and dependency graph generation.
+- Optionally scope analysis to a specific package path (e.g. "go-navigator/internal/tools").
 
 Example:
-analyzeDependencies { "dir": "." }
+analyzeDependencies { "dir": ".", "package": "go-navigator/internal/tools" }
 `
 
 // FindImplementationsDesc describes the findImplementations tool.
@@ -142,9 +163,10 @@ Aggregates general project metrics: package/struct/interface counts, average cyc
 Use when:
 - You want a quick summary of codebase health.
 - Useful for dashboards, reports, or CI metrics.
+- Optionally scope aggregation to a specific package path (e.g. "go-navigator/internal/tools").
 
 Example:
-metricsSummary { "dir": "." }
+metricsSummary { "dir": ".", "package": "go-navigator/internal/tools" }
 `
 
 // ASTRewriteDesc describes the astRewrite tool.

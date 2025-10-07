@@ -17,7 +17,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/go/packages"
 )
 
 // RenameSymbol performs a safe, scope-aware rename with dry-run diff preview.
@@ -36,9 +35,12 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 	RenameSymbolOutput,
 	error,
 ) {
-	start := logStart("RenameSymbol", map[string]string{
-		"dir": input.Dir, "oldName": input.OldName, "newName": input.NewName, "dryRun": strconv.FormatBool(input.DryRun),
-	})
+	start := logStart("RenameSymbol", logFields(
+		input.Dir,
+		newLogField("oldName", input.OldName),
+		newLogField("newName", input.NewName),
+		newLogField("dryRun", strconv.FormatBool(input.DryRun)),
+	))
 	out := RenameSymbolOutput{}
 
 	defer func() { logEnd("RenameSymbol", start, len(out.ChangedFiles)) }()
@@ -49,7 +51,7 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 		return nil, out, nil
 	}
 
-	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedCompiledGoFiles
+	mode := loadModeSyntaxTypesNamedFiles
 
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
@@ -202,13 +204,13 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 				newContent = append(newContent, '\n')
 			}
 
-			rel, _ := filepath.Rel(input.Dir, filename)
-			out.ChangedFiles = append(out.ChangedFiles, rel)
+			relPath := resolveFilePath(pkg, input.Dir, i, file)
+			out.ChangedFiles = append(out.ChangedFiles, relPath)
 
 			if input.DryRun {
-				diffText := diffFiles(origBytes, newContent, rel)
+				diffText := diffFiles(origBytes, newContent, relPath)
 
-				out.Diffs = append(out.Diffs, FileDiff{Path: rel, Diff: diffText})
+				out.Diffs = append(out.Diffs, FileDiff{Path: relPath, Diff: diffText})
 
 				continue
 			}
@@ -241,9 +243,11 @@ func ASTRewrite(ctx context.Context, req *mcp.CallToolRequest, input ASTRewriteI
 	ASTRewriteOutput,
 	error,
 ) {
-	start := logStart("ASTRewrite", map[string]string{
-		"dir": input.Dir, "find": input.Find, "replace": input.Replace,
-	})
+	start := logStart("ASTRewrite", logFields(
+		input.Dir,
+		newLogField("find", input.Find),
+		newLogField("replace", input.Replace),
+	))
 	out := ASTRewriteOutput{
 		ChangedFiles: []string{},
 		Diffs:        []FileDiff{},
@@ -263,7 +267,7 @@ func ASTRewrite(ctx context.Context, req *mcp.CallToolRequest, input ASTRewriteI
 		return nil, out, fmt.Errorf("invalid replace expression: %w", err)
 	}
 
-	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedCompiledGoFiles
+	mode := loadModeSyntaxTypes
 
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
@@ -288,7 +292,7 @@ func ASTRewrite(ctx context.Context, req *mcp.CallToolRequest, input ASTRewriteI
 				Changes:     &changesInFile,
 			}
 
-			newFile := ast.Node(rewriter.Rewrite(file))
+			newFile := rewriter.Rewrite(file)
 
 			if changesInFile == 0 {
 				continue
@@ -308,7 +312,11 @@ func ASTRewrite(ctx context.Context, req *mcp.CallToolRequest, input ASTRewriteI
 				newContent = append(newContent, '\n')
 			}
 
-			rel, _ := filepath.Rel(input.Dir, filename)
+			rel := relativePath(input.Dir, filename)
+			if rel == "" {
+				rel = filepath.ToSlash(filename)
+			}
+
 			out.ChangedFiles = append(out.ChangedFiles, rel)
 			totalChanges += changesInFile
 

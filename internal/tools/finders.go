@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
-	"path/filepath"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -28,14 +27,22 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 	FindReferencesOutput,
 	error,
 ) {
-	start := logStart("FindReferences", map[string]string{
-		"dir": input.Dir, "ident": input.Ident, "kind": input.Kind,
-	})
-	out := FindReferencesOutput{References: []Reference{}}
+	out := FindReferencesOutput{}
+	if err := validatePagination(input.Limit, input.Offset); err != nil {
+		return fail(out, err)
+	}
 
-	defer func() { logEnd("FindReferences", start, len(out.References)) }()
+	start := logStart("FindReferences", logFields(
+		input.Dir,
+		newLogField("ident", input.Ident),
+		newLogField("kind", input.Kind),
+	))
 
-	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedTypes | packages.NeedTypesInfo
+	resultCount := 0
+
+	defer func() { logEnd("FindReferences", start, resultCount) }()
+
+	mode := loadModeSyntaxTypes | packages.NeedFiles
 
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
@@ -47,13 +54,15 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 		return nil, out, fmt.Errorf("symbol %q not found", input.Ident)
 	}
 
+	records := make([]locationRecord, 0)
+
 	for _, pkg := range pkgs {
 		if shouldStop(ctx) {
 			return fail(out, context.Canceled)
 		}
 
-		for _, file := range pkg.Syntax {
-			absPath := pkg.Fset.File(file.Pos()).Name()
+		for i, file := range pkg.Syntax {
+			relPath := resolveFilePath(pkg, input.Dir, i, file)
 			lines := getFileLines(pkg.Fset, file)
 
 			ast.Inspect(file, func(n ast.Node) bool {
@@ -81,12 +90,23 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 				}
 
 				snip := extractSnippet(lines, pos.Line)
-				appendReference(&out.References, input.Dir, absPath, pos.Line, snip)
+				appendReference(&records, input.Dir, relPath, pos.Line, snip)
 
 				return true
 			})
 		}
 	}
+
+	sortLocationRecords(records)
+
+	out.Total = len(records)
+
+	offset, paged := applyPagination(records, input.Offset, input.Limit)
+	out.Offset = offset
+	out.Limit = input.Limit
+
+	resultCount = len(paged)
+	out.Groups = makeReferenceGroups(paged)
 
 	return nil, out, nil
 }
@@ -107,19 +127,29 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 	FindDefinitionsOutput,
 	error,
 ) {
-	start := logStart("FindDefinitions", map[string]string{
-		"dir": input.Dir, "ident": input.Ident, "kind": input.Kind,
-	})
-	out := FindDefinitionsOutput{Definitions: []Definition{}}
+	out := FindDefinitionsOutput{}
+	if err := validatePagination(input.Limit, input.Offset); err != nil {
+		return fail(out, err)
+	}
 
-	defer func() { logEnd("FindDefinitions", start, len(out.Definitions)) }()
+	start := logStart("FindDefinitions", logFields(
+		input.Dir,
+		newLogField("ident", input.Ident),
+		newLogField("kind", input.Kind),
+	))
 
-	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedTypes | packages.NeedTypesInfo
+	resultCount := 0
+
+	defer func() { logEnd("FindDefinitions", start, resultCount) }()
+
+	mode := loadModeSyntaxTypes
 
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
 		return fail(out, err)
 	}
+
+	records := make([]locationRecord, 0)
 
 	for _, pkg := range pkgs {
 		if shouldStop(ctx) {
@@ -127,9 +157,20 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 		}
 
 		if obj := findTargetObject(ctx, []*packages.Package{pkg}, input.Ident, input.Kind); obj != nil {
-			appendDefinition(&out.Definitions, input.Dir, pkg.Fset, obj.Pos(), input.File)
+			appendDefinition(&records, input.Dir, pkg.Fset, obj.Pos(), input.File)
 		}
 	}
+
+	sortLocationRecords(records)
+
+	out.Total = len(records)
+
+	offset, paged := applyPagination(records, input.Offset, input.Limit)
+	out.Offset = offset
+	out.Limit = input.Limit
+
+	resultCount = len(paged)
+	out.Groups = makeDefinitionGroups(paged)
 
 	return nil, out, nil
 }
@@ -150,12 +191,15 @@ func FindImplementations(ctx context.Context, req *mcp.CallToolRequest, input Fi
 	FindImplementationsOutput,
 	error,
 ) {
-	start := logStart("FindImplementations", map[string]string{"dir": input.Dir, "name": input.Name})
+	start := logStart("FindImplementations", logFields(
+		input.Dir,
+		newLogField("name", input.Name),
+	))
 	out := FindImplementationsOutput{Implementations: []Implementation{}}
 
 	defer func() { logEnd("FindImplementations", start, len(out.Implementations)) }()
 
-	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedCompiledGoFiles | packages.NeedTypesInfo
+	mode := loadModeSyntaxTypes
 
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
@@ -212,10 +256,9 @@ func FindImplementations(ctx context.Context, req *mcp.CallToolRequest, input Fi
 	}
 
 	// Look for types that implement this interface
-	for _, pkg := range pkgs {
+	for i, pkg := range pkgs {
 		for _, file := range pkg.Syntax {
-			absPath := pkg.Fset.File(file.Pos()).Name()
-			relPath, _ := filepath.Rel(input.Dir, absPath)
+			relPath := resolveFilePath(pkg, input.Dir, i, file)
 
 			// Find all type declarations and check if they implement the interface
 			ast.Inspect(file, func(n ast.Node) bool {

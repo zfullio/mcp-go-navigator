@@ -29,12 +29,12 @@ func ListPackages(ctx context.Context, req *mcp.CallToolRequest, input ListPacka
 	ListPackagesOutput,
 	error,
 ) {
-	start := logStart("ListPackages", map[string]string{"dir": input.Dir})
+	start := logStart("ListPackages", logFields(input.Dir))
 	out := ListPackagesOutput{Packages: []string{}}
 
 	defer func() { logEnd("ListPackages", start, len(out.Packages)) }()
 
-	mode := packages.NeedName | packages.NeedCompiledGoFiles
+	mode := loadModeBasic
 
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
@@ -44,7 +44,12 @@ func ListPackages(ctx context.Context, req *mcp.CallToolRequest, input ListPacka
 	}
 
 	for _, pkg := range pkgs {
-		out.Packages = append(out.Packages, pkg.PkgPath)
+		path := normalizePackagePath(pkg)
+		if path == "" && pkg.Name != "" {
+			path = pkg.Name
+		}
+
+		out.Packages = append(out.Packages, path)
 	}
 
 	return nil, out, nil
@@ -66,83 +71,41 @@ func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbol
 	ListSymbolsOutput,
 	error,
 ) {
-	start := logStart("ListSymbols", map[string]string{"dir": input.Dir})
+	start := logStart("ListSymbols", logFields(
+		input.Dir,
+		newLogField("package", input.Package),
+	))
 	symbols := []Symbol{}
 
 	defer func() { logEnd("ListSymbols", start, len(symbols)) }()
 
-	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedCompiledGoFiles | packages.NeedTypesInfo | packages.NeedName | packages.NeedFiles
+	mode := loadModeSyntaxTypesNamedFiles
 
-	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
+	_, filteredPkgs, err := loadFilteredPackages(ctx, input.Dir, mode, input.Package, "ListSymbols")
 	if err != nil {
-		logError("ListSymbols", err, "failed to load packages")
-
 		return fail(ListSymbolsOutput{}, err)
 	}
 
-	for _, pkg := range pkgs {
-		pkgPath := pkg.PkgPath
+	if err := walkPackageFiles(ctx, filteredPkgs, input.Dir, func(pkg *packages.Package, file *ast.File, relPath string, _ int) error {
+		pkgPath := normalizePackagePath(pkg)
+		if pkgPath == "" && file.Name != nil {
+			pkgPath = file.Name.Name
+		}
+
 		if pkgPath == "" {
-			pkgPath = pkg.Name
+			pkgPath = "(unknown)"
 		}
 
-		if input.Package != "" && pkgPath != input.Package && pkg.Name != input.Package {
-			continue
+		for _, sym := range collectSymbols(file, pkg.Fset, pkgPath, relPath) {
+			switch sym.Kind {
+			case "func", "struct", "interface", "method":
+				symbols = append(symbols, sym)
+			}
 		}
 
-		for i, file := range pkg.Syntax {
-			relPath := resolveFilePath(pkg, input.Dir, i, file)
-
-			ast.Inspect(file, func(n ast.Node) bool {
-				switch decl := n.(type) {
-				case *ast.FuncDecl:
-					symbols = append(symbols, Symbol{
-						Kind:     "func",
-						Name:     decl.Name.Name,
-						Package:  pkg.PkgPath,
-						File:     relPath,
-						Line:     pkg.Fset.Position(decl.Pos()).Line,
-						Exported: decl.Name.IsExported(),
-					})
-				case *ast.TypeSpec:
-					switch t := decl.Type.(type) {
-					case *ast.StructType:
-						symbols = append(symbols, Symbol{
-							Kind:     "struct",
-							Name:     decl.Name.Name,
-							Package:  pkg.PkgPath,
-							File:     relPath,
-							Line:     pkg.Fset.Position(decl.Pos()).Line,
-							Exported: decl.Name.IsExported(),
-						})
-					case *ast.InterfaceType:
-						symbols = append(symbols, Symbol{
-							Kind:     "interface",
-							Name:     decl.Name.Name,
-							Package:  pkg.PkgPath,
-							File:     relPath,
-							Line:     pkg.Fset.Position(decl.Pos()).Line,
-							Exported: decl.Name.IsExported(),
-						})
-
-						for _, m := range t.Methods.List {
-							if len(m.Names) > 0 {
-								symbols = append(symbols, Symbol{
-									Kind:     "method",
-									Name:     decl.Name.Name + "." + m.Names[0].Name,
-									Package:  pkg.PkgPath,
-									File:     relPath,
-									Line:     pkg.Fset.Position(m.Pos()).Line,
-									Exported: m.Names[0].IsExported(),
-								})
-							}
-						}
-					}
-				}
-
-				return true
-			})
-		}
+		return nil
+	}); err != nil {
+		return fail(ListSymbolsOutput{}, err)
 	}
 
 	sort.Slice(symbols, func(i, j int) bool {
@@ -337,31 +300,33 @@ func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImport
 	ListImportsOutput,
 	error,
 ) {
-	start := logStart("ListImports", map[string]string{"dir": input.Dir})
+	start := logStart("ListImports", logFields(
+		input.Dir,
+		newLogField("package", input.Package),
+	))
 	out := ListImportsOutput{}
 
 	defer func() { logEnd("ListImports", start, len(out.Imports)) }()
 
-	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedName
-
-	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
-	if err != nil {
-		logError("ListImports", err, "failed to load packages")
-
-		return fail(out, err)
-	}
+	mode := loadModeBasicSyntax
 
 	flatImports := make([]Import, 0)
 
-	for _, pkg := range pkgs {
-		for i, file := range pkg.Syntax {
-			relPath := resolveFilePath(pkg, input.Dir, i, file)
-			for _, imp := range file.Imports {
-				path := strings.Trim(imp.Path.Value, `"`)
-				pos := pkg.Fset.Position(imp.Pos())
-				flatImports = append(flatImports, Import{Path: path, File: relPath, Line: pos.Line})
-			}
+	_, filteredPkgs, err := loadFilteredPackages(ctx, input.Dir, mode, input.Package, "ListImports")
+	if err != nil {
+		return fail(out, err)
+	}
+
+	if err := walkPackageFiles(ctx, filteredPkgs, input.Dir, func(pkg *packages.Package, file *ast.File, relPath string, _ int) error {
+		for _, imp := range file.Imports {
+			path := strings.Trim(imp.Path.Value, `"`)
+			pos := pkg.Fset.Position(imp.Pos())
+			flatImports = append(flatImports, Import{Path: path, File: relPath, Line: pos.Line})
 		}
+
+		return nil
+	}); err != nil {
+		return fail(out, err)
 	}
 
 	out.Imports = groupImportsByFile(flatImports)
@@ -385,102 +350,69 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 	ListInterfacesOutput,
 	error,
 ) {
-	start := logStart("ListInterfaces", map[string]string{"dir": input.Dir})
+	start := logStart("ListInterfaces", logFields(
+		input.Dir,
+		newLogField("package", input.Package),
+	))
 	out := ListInterfacesOutput{}
 
 	defer func() { logEnd("ListInterfaces", start, len(out.Interfaces)) }()
 
-	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedName
-
-	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
-	if err != nil {
-		logError("ListInterfaces", err, "failed to load packages")
-
-		return fail(out, err)
-	}
+	mode := loadModeBasicSyntax
 
 	interfacesByPackage := make(map[string][]InterfaceInfo)
 
-	for _, pkg := range pkgs {
-		for i, file := range pkg.Syntax {
-			relPath := resolveFilePath(pkg, input.Dir, i, file)
+	_, filteredPkgs, err := loadFilteredPackages(ctx, input.Dir, mode, input.Package, "ListInterfaces")
+	if err != nil {
+		return fail(out, err)
+	}
 
-			pkgKey := pkg.PkgPath
-			if pkgKey == "" {
-				pkgKey = pkg.Name
+	if err := walkPackageFiles(ctx, filteredPkgs, input.Dir, func(pkg *packages.Package, file *ast.File, relPath string, _ int) error {
+		pkgKey := normalizePackagePath(pkg)
+		if pkgKey == "" && file.Name != nil {
+			pkgKey = file.Name.Name
+		}
+
+		if pkgKey == "" {
+			pkgKey = "(unknown)"
+		}
+
+		ast.Inspect(file, func(n ast.Node) bool {
+			ts, ok := n.(*ast.TypeSpec)
+			if !ok {
+				return true
 			}
 
-			if pkgKey == "" && file.Name != nil {
-				pkgKey = file.Name.Name
-			}
+			if iface, ok := ts.Type.(*ast.InterfaceType); ok {
+				pos := symbolPos(pkg, ts)
 
-			if pkgKey == "" {
-				pkgKey = "(unknown)"
-			}
-
-			ast.Inspect(file, func(n ast.Node) bool {
-				ts, ok := n.(*ast.TypeSpec)
-				if !ok {
-					return true
+				ifInfo := InterfaceInfo{
+					Name: ts.Name.Name, File: relPath, Line: pos.Line, Methods: []InterfaceMethod{},
 				}
-
-				if iface, ok := ts.Type.(*ast.InterfaceType); ok {
-					pos := symbolPos(pkg, ts)
-
-					ifInfo := InterfaceInfo{
-						Name: ts.Name.Name, File: relPath, Line: pos.Line, Methods: []InterfaceMethod{},
-					}
-					if iface.Methods != nil {
-						for _, m := range iface.Methods.List {
-							if len(m.Names) > 0 {
-								ifInfo.Methods = append(ifInfo.Methods, InterfaceMethod{
-									Name: m.Names[0].Name, Line: pkg.Fset.Position(m.Pos()).Line,
-								})
-							}
+				if iface.Methods != nil {
+					for _, m := range iface.Methods.List {
+						if len(m.Names) > 0 {
+							ifInfo.Methods = append(ifInfo.Methods, InterfaceMethod{
+								Name: m.Names[0].Name, Line: pkg.Fset.Position(m.Pos()).Line,
+							})
 						}
 					}
-
-					interfacesByPackage[pkgKey] = append(interfacesByPackage[pkgKey], ifInfo)
 				}
 
-				return true
-			})
-		}
+				interfacesByPackage[pkgKey] = append(interfacesByPackage[pkgKey], ifInfo)
+			}
+
+			return true
+		})
+
+		return nil
+	}); err != nil {
+		return fail(out, err)
 	}
 
 	out.Interfaces = groupInterfacesByPackage(interfacesByPackage)
 
 	return nil, out, nil
-}
-
-func resolveFilePath(pkg *packages.Package, inputDir string, fileIndex int, file *ast.File) string {
-	var absPath string
-
-	// 1. Пытаемся получить путь через FileSet
-	if f := pkg.Fset.File(file.Pos()); f != nil {
-		absPath = f.Name()
-	}
-
-	// 2. Если не удалось — fallback через CompiledGoFiles и GoFiles
-	if absPath == "" {
-		if len(pkg.CompiledGoFiles) > fileIndex {
-			absPath = pkg.CompiledGoFiles[fileIndex]
-		} else if len(pkg.GoFiles) > fileIndex {
-			absPath = pkg.GoFiles[fileIndex]
-		}
-	}
-
-	// 3. Делаем путь относительным к input.Dir (для удобства)
-	if absPath == "" {
-		return ""
-	}
-
-	relPath, err := filepath.Rel(inputDir, absPath)
-	if err != nil {
-		return absPath // на случай ошибки просто вернуть абсолютный
-	}
-
-	return relPath
 }
 
 // ProjectSchema aggregates full structural metadata of a Go module,
@@ -500,11 +432,12 @@ func ProjectSchema(ctx context.Context, req *mcp.CallToolRequest, input ProjectS
 	ProjectSchemaOutput,
 	error,
 ) {
-	start := logStart("ProjectSchema", map[string]string{
-		"dir":   input.Dir,
-		"depth": input.Depth,
-	})
+	start := logStart("ProjectSchema", logFields(
+		input.Dir,
+		newLogField("depth", input.Depth),
+	))
 	out := ProjectSchemaOutput{}
+
 	defer func() { logEnd("ProjectSchema", start, len(out.Packages)) }()
 
 	// Determine depth level
@@ -514,7 +447,7 @@ func ProjectSchema(ctx context.Context, req *mcp.CallToolRequest, input ProjectS
 	}
 
 	// Adjust analysis mode based on depth
-	mode := packages.NeedName | packages.NeedCompiledGoFiles
+	mode := loadModeBasic
 	if depth == "standard" || depth == "deep" {
 		mode |= packages.NeedImports | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo
 	} else {
@@ -524,6 +457,7 @@ func ProjectSchema(ctx context.Context, req *mcp.CallToolRequest, input ProjectS
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
 		logError("ProjectSchema", err, "failed to load packages")
+
 		return fail(out, err)
 	}
 
@@ -533,17 +467,16 @@ func ProjectSchema(ctx context.Context, req *mcp.CallToolRequest, input ProjectS
 	out.GoVersion = goVersion
 	out.RootDir = input.Dir
 
-	var (
-		structCount, funcCount, ifaceCount int
-	)
+	var structCount, funcCount, ifaceCount int
 
 	pkgMap := map[string]ProjectPackage{}
 	depGraph := map[string][]string{}
 	externalDeps := map[string]struct{}{}
+
 	var allInterfaces []ProjectInterface // Only initialize if needed for standard/deep mode
 
 	for _, pkg := range pkgs {
-		pkgPath := pkg.PkgPath
+		pkgPath := normalizePackagePath(pkg)
 		if pkgPath == "" {
 			pkgPath = pkg.Name
 		}
@@ -564,36 +497,41 @@ func ProjectSchema(ctx context.Context, req *mcp.CallToolRequest, input ProjectS
 
 		// Only analyze AST if we need detailed information
 		if depth == "standard" || depth == "deep" {
-			for _, file := range pkg.Syntax {
-				ast.Inspect(file, func(n ast.Node) bool {
-					switch ts := n.(type) {
-					case *ast.TypeSpec:
-						switch t := ts.Type.(type) {
-						case *ast.StructType:
-							symbols.Structs = append(symbols.Structs, ts.Name.Name)
-							structCount++
-						case *ast.InterfaceType:
-							methods := []string{}
-							if t.Methods != nil {
-								for _, m := range t.Methods.List {
-									if len(m.Names) > 0 {
-										methods = append(methods, m.Names[0].Name)
-									}
-								}
-							}
-							allInterfaces = append(allInterfaces, ProjectInterface{
-								Name: ts.Name.Name, DefinedIn: pkgPath, Methods: methods,
-							})
-							symbols.Interfaces = append(symbols.Interfaces, ts.Name.Name)
+			pkgInterfaceMethods := make(map[string][]string)
+			interfaceListed := make(map[string]struct{})
+
+			for i, file := range pkg.Syntax {
+				relPath := resolveFilePath(pkg, input.Dir, i, file)
+
+				for _, sym := range collectSymbols(file, pkg.Fset, pkgPath, relPath) {
+					switch sym.Kind {
+					case "struct":
+						symbols.Structs = append(symbols.Structs, sym.Name)
+						structCount++
+					case "interface":
+						if _, listed := interfaceListed[sym.Name]; !listed {
+							symbols.Interfaces = append(symbols.Interfaces, sym.Name)
 							ifaceCount++
-						default:
-							symbols.Types = append(symbols.Types, ts.Name.Name)
+							interfaceListed[sym.Name] = struct{}{}
 						}
-					case *ast.FuncDecl:
-						symbols.Functions = append(symbols.Functions, ts.Name.Name)
+					case "type":
+						symbols.Types = append(symbols.Types, sym.Name)
+					case "func":
+						symbols.Functions = append(symbols.Functions, sym.Name)
 						funcCount++
+					case "method":
+						parts := strings.SplitN(sym.Name, ".", 2)
+						if len(parts) == 2 {
+							pkgInterfaceMethods[parts[0]] = append(pkgInterfaceMethods[parts[0]], parts[1])
+						}
 					}
-					return true
+				}
+			}
+
+			for _, ifaceName := range symbols.Interfaces {
+				methods := pkgInterfaceMethods[ifaceName]
+				allInterfaces = append(allInterfaces, ProjectInterface{
+					Name: ifaceName, DefinedIn: pkgPath, Methods: methods,
 				})
 			}
 		}
@@ -610,11 +548,13 @@ func ProjectSchema(ctx context.Context, req *mcp.CallToolRequest, input ProjectS
 	for _, pkg := range pkgMap {
 		out.Packages = append(out.Packages, pkg)
 	}
+
 	sort.Slice(out.Packages, func(i, j int) bool { return out.Packages[i].Path < out.Packages[j].Path })
 
 	for dep := range externalDeps {
 		out.ExternalDeps = append(out.ExternalDeps, dep)
 	}
+
 	sort.Strings(out.ExternalDeps)
 
 	out.DependencyGraph = depGraph
@@ -645,6 +585,7 @@ func readGoModInfo(dir string) (moduleName, goVersion string) {
 	data, err := os.ReadFile(modFile)
 	if err != nil {
 		log.Debug().Err(err).Str("file", modFile).Msg("go.mod not found or unreadable")
+
 		return "", ""
 	}
 
@@ -653,8 +594,10 @@ func readGoModInfo(dir string) (moduleName, goVersion string) {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "module ") {
 			moduleName = strings.TrimSpace(strings.TrimPrefix(line, "module"))
+
 			continue
 		}
+
 		if strings.HasPrefix(line, "go ") {
 			goVersion = strings.TrimSpace(strings.TrimPrefix(line, "go"))
 		}
@@ -663,6 +606,7 @@ func readGoModInfo(dir string) (moduleName, goVersion string) {
 	if moduleName == "" {
 		log.Warn().Str("dir", dir).Msg("module name not found in go.mod")
 	}
+
 	if goVersion == "" {
 		log.Debug().Str("dir", dir).Msg("Go version not found in go.mod")
 	}

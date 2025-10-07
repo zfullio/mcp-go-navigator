@@ -41,8 +41,9 @@
 ## MCP Tool Catalog
 **Project overview**
 - `listPackages` — discover packages under `dir`.
-- `metricsSummary` — aggregate counts (packages/interfaces), average cyclomatic complexity, unused symbol ratios.
-- `analyzeDependencies` — dependency graph with fan-in/fan-out and cycle detection.
+- `metricsSummary` — aggregate counts (packages/interfaces), average cyclomatic complexity, unused symbol ratios (supports package filter).
+- `analyzeComplexity` — function metrics (cyclomatic, nesting, LoC) with optional package filter.
+- `analyzeDependencies` — dependency graph with fan-in/fan-out and cycle detection (supports package filter).
 - `projectSchema` — aggregate full structural metadata of a Go module including packages, symbols, interfaces, imports, and dependency graph. Supports configurable detail levels via `depth` parameter (summary, standard, or deep).
 
 **Structure & navigation**
@@ -60,7 +61,7 @@
 
 **Quality & refactoring**
 - `analyzeComplexity` — function metrics grouped by file.
-- `deadCode` — unused symbols (extend scope with `includeExported=true`).
+- `deadCode` — unused symbols (extend scope with `includeExported=true`, supports package filter).
 - `renameSymbol` — safe rename with dry-run diff (`preview=true`) and collision reports.
 - `astRewrite` — pattern-driven AST transformations (start with `dryRun=true`).
 

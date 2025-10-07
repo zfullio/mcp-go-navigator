@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"golang.org/x/tools/go/packages"
 )
 
 // ReadFunc returns the source code and metadata of a specific function or method.
@@ -33,12 +32,15 @@ func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput
 	ReadFuncOutput,
 	error,
 ) {
-	start := logStart("ReadFunc", map[string]string{"dir": input.Dir, "name": input.Name})
+	start := logStart("ReadFunc", logFields(
+		input.Dir,
+		newLogField("name", input.Name),
+	))
 	out := ReadFuncOutput{}
 
 	defer func() { logEnd("ReadFunc", start, 1) }()
 
-	mode := packages.NeedSyntax | packages.NeedCompiledGoFiles | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedName
+	mode := loadModeSyntaxTypesNamed
 
 	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
 	if err != nil {
@@ -87,6 +89,7 @@ func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput
 				// Определяем абсолютный путь к файлу, в котором находится функция
 				// Сначала пытаемся получить имя файла из FileSet
 				abs := ""
+
 				funcFile := fset.File(fd.Pos())
 				if funcFile != nil {
 					abs = funcFile.Name()
@@ -101,6 +104,7 @@ func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput
 						// содержится ли в нем функция с заданной позицией
 						if fset.File(funcPos).Name() == compiledGoFile {
 							abs = compiledGoFile
+
 							break
 						}
 					}
@@ -111,22 +115,9 @@ func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput
 					abs = pkg.CompiledGoFiles[0]
 				}
 
-				rel, err := filepath.Rel(input.Dir, abs)
-				if err != nil {
-					logError("ReadFunc", err, "failed to compute relative path")
-					// Если вычисление относительного пути не удалось, попробуем получить относительный путь другим способом
-					// Например, если abs - это один из файлов в pkg.CompiledGoFiles, мы можем использовать его относительный путь
-					for _, compiledFile := range pkg.CompiledGoFiles {
-						if compiledFile == abs {
-							// compiledFile уже должен быть относительным путем
-							rel = compiledFile
-							break
-						}
-					}
-					// Если все равно не удалось, используем запасной вариант
-					if rel == "" {
-						rel = abs
-					}
+				rel := relativePath(input.Dir, abs)
+				if rel == "" && abs != "" {
+					rel = filepath.ToSlash(abs)
 				}
 
 				// Ensure rel is not empty - this is a fallback to prevent empty File field
@@ -187,7 +178,11 @@ func ReadFile(ctx context.Context, req *mcp.CallToolRequest, input ReadFileInput
 	ReadFileOutput,
 	error,
 ) {
-	start := logStart("ReadFile", map[string]string{"dir": input.Dir, "file": input.File, "mode": input.Mode})
+	start := logStart("ReadFile", logFields(
+		input.Dir,
+		newLogField("file", input.File),
+		newLogField("mode", input.Mode),
+	))
 	out := ReadFileOutput{File: input.File}
 
 	defer func() { logEnd("ReadFile", start, 1) }()
@@ -231,84 +226,7 @@ func ReadFile(ctx context.Context, req *mcp.CallToolRequest, input ReadFileInput
 	}
 
 	// 4️⃣ Символы
-	ast.Inspect(file, func(n ast.Node) bool {
-		switch decl := n.(type) {
-		case *ast.FuncDecl:
-			out.Symbols = append(out.Symbols, Symbol{
-				Kind:     "func",
-				Name:     decl.Name.Name,
-				Package:  out.Package,
-				File:     input.File,
-				Line:     fset.Position(decl.Pos()).Line,
-				Exported: decl.Name.IsExported(),
-			})
-		case *ast.TypeSpec:
-			switch decl.Type.(type) {
-			case *ast.StructType:
-				out.Symbols = append(out.Symbols, Symbol{
-					Kind:     "struct",
-					Name:     decl.Name.Name,
-					Package:  out.Package,
-					File:     input.File,
-					Line:     fset.Position(decl.Pos()).Line,
-					Exported: decl.Name.IsExported(),
-				})
-			case *ast.InterfaceType:
-				out.Symbols = append(out.Symbols, Symbol{
-					Kind:     "interface",
-					Name:     decl.Name.Name,
-					Package:  out.Package,
-					File:     input.File,
-					Line:     fset.Position(decl.Pos()).Line,
-					Exported: decl.Name.IsExported(),
-				})
-			default:
-				out.Symbols = append(out.Symbols, Symbol{
-					Kind:     "type",
-					Name:     decl.Name.Name,
-					Package:  out.Package,
-					File:     input.File,
-					Line:     fset.Position(decl.Pos()).Line,
-					Exported: decl.Name.IsExported(),
-				})
-			}
-		case *ast.GenDecl:
-			switch decl.Tok {
-			case token.CONST:
-				for _, spec := range decl.Specs {
-					if vs, ok := spec.(*ast.ValueSpec); ok {
-						for _, n := range vs.Names {
-							out.Symbols = append(out.Symbols, Symbol{
-								Kind:     "const",
-								Name:     n.Name,
-								Package:  out.Package,
-								File:     input.File,
-								Line:     fset.Position(n.Pos()).Line,
-								Exported: n.IsExported(),
-							})
-						}
-					}
-				}
-			case token.VAR:
-				for _, spec := range decl.Specs {
-					if vs, ok := spec.(*ast.ValueSpec); ok {
-						for _, n := range vs.Names {
-							out.Symbols = append(out.Symbols, Symbol{
-								Kind:     "var",
-								Name:     n.Name,
-								Package:  out.Package,
-								File:     input.File,
-								Line:     fset.Position(n.Pos()).Line,
-								Exported: n.IsExported(),
-							})
-						}
-					}
-				}
-			}
-		}
-
-		return true
-	})
+	out.Symbols = append(out.Symbols, collectSymbols(file, fset, out.Package, input.File)...)
 
 	// 5️⃣ Если режим summary — удаляем исходник, оставляем только метаданные
 	if input.Mode == "summary" {
@@ -324,17 +242,18 @@ func ReadStruct(ctx context.Context, req *mcp.CallToolRequest, input ReadStructI
 	ReadStructOutput,
 	error,
 ) {
-	start := logStart("ReadStruct", map[string]string{"dir": input.Dir, "name": input.Name})
+	start := logStart("ReadStruct", logFields(
+		input.Dir,
+		newLogField("name", input.Name),
+	))
 	out := ReadStructOutput{}
 
 	defer func() { logEnd("ReadStruct", start, 1) }()
 
-	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedCompiledGoFiles | packages.NeedTypesInfo
+	mode := loadModeSyntaxTypesNamedFiles
 
-	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
+	pkgs, _, err := loadFilteredPackages(ctx, input.Dir, mode, "", "ReadStruct")
 	if err != nil {
-		logError("ReadStruct", err, "failed to load packages")
-
 		return fail(out, err)
 	}
 
@@ -355,10 +274,9 @@ func ReadStruct(ctx context.Context, req *mcp.CallToolRequest, input ReadStructI
 			continue
 		}
 
-		for _, file := range pkg.Syntax {
+		for i, file := range pkg.Syntax {
 			fset := pkg.Fset
-			fileName := fset.File(file.Pos()).Name()
-			relPath, _ := filepath.Rel(input.Dir, fileName)
+			relPath := resolveFilePath(pkg, input.Dir, i, file)
 
 			ast.Inspect(file, func(n ast.Node) bool {
 				ts, ok := n.(*ast.TypeSpec)

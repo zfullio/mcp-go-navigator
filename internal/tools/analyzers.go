@@ -6,7 +6,6 @@ import (
 	"go/token"
 	"go/types"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -29,7 +28,10 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 	DeadCodeOutput,
 	error,
 ) {
-	start := logStart("DeadCode", map[string]string{"dir": input.Dir})
+	start := logStart("DeadCode", logFields(
+		input.Dir,
+		newLogField("package", input.Package),
+	))
 	out := DeadCodeOutput{
 		Unused:    []DeadSymbol{},
 		ByPackage: make(map[string]int),
@@ -37,18 +39,22 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 
 	defer func() { logEnd("DeadCode", start, len(out.Unused)) }()
 
-	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedCompiledGoFiles | packages.NeedName
+	mode := loadModeSyntaxTypesNamed
 
-	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
+	_, filteredPkgs, err := loadFilteredPackages(ctx, input.Dir, mode, input.Package, "DeadCode")
 	if err != nil {
-		logError("DeadCode", err, "failed to load packages")
-
 		return fail(out, err)
 	}
 
 	exportedCount := 0
+	byKind := make(map[string]int)
 
-	for _, pkg := range pkgs {
+	for _, pkg := range filteredPkgs {
+		pkgKey := normalizePackagePath(pkg)
+		if pkgKey == "" {
+			pkgKey = pkg.Name
+		}
+
 		used := make(map[types.Object]struct{}, len(pkg.TypesInfo.Uses))
 		for _, obj := range pkg.TypesInfo.Uses {
 			if obj != nil {
@@ -74,7 +80,7 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 			}
 
 			pos := pkg.Fset.Position(ident.Pos())
-			rel, _ := filepath.Rel(input.Dir, pos.Filename)
+			rel := relativePath(input.Dir, pos.Filename)
 
 			symbol := DeadSymbol{
 				Name:       ident.Name,
@@ -82,7 +88,7 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 				File:       rel,
 				Line:       pos.Line,
 				IsExported: isExported,
-				Package:    pkg.PkgPath,
+				Package:    pkgKey,
 			}
 
 			out.Unused = append(out.Unused, symbol)
@@ -91,13 +97,20 @@ func DeadCode(ctx context.Context, req *mcp.CallToolRequest, input DeadCodeInput
 				exportedCount++
 			}
 
-			// Update package count
-			out.ByPackage[pkg.PkgPath]++
+			// Update aggregated counters
+			out.ByPackage[pkgKey]++
+			byKind[symbol.Kind]++
 		}
 	}
 
 	out.TotalCount = len(out.Unused)
 	out.ExportedCount = exportedCount
+	out.ByKind = byKind
+
+	if input.Limit > 0 && len(out.Unused) > input.Limit {
+		out.HasMore = true
+		out.Unused = out.Unused[:input.Limit]
+	}
 
 	return nil, out, nil
 }
@@ -118,7 +131,10 @@ func AnalyzeDependencies(ctx context.Context, req *mcp.CallToolRequest, input An
 	AnalyzeDependenciesOutput,
 	error,
 ) {
-	start := logStart("AnalyzeDependencies", map[string]string{"dir": input.Dir})
+	start := logStart("AnalyzeDependencies", logFields(
+		input.Dir,
+		newLogField("package", input.Package),
+	))
 	out := AnalyzeDependenciesOutput{
 		Dependencies: []PackageDependency{},
 		Cycles:       [][]string{},
@@ -126,50 +142,52 @@ func AnalyzeDependencies(ctx context.Context, req *mcp.CallToolRequest, input An
 
 	defer func() { logEnd("AnalyzeDependencies", start, len(out.Dependencies)) }()
 
-	mode := packages.NeedName | packages.NeedImports | packages.NeedCompiledGoFiles
+	mode := loadModeBasic | packages.NeedImports
 
-	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
+	pkgs, filteredPkgs, err := loadFilteredPackages(ctx, input.Dir, mode, input.Package, "AnalyzeDependencies")
 	if err != nil {
-		logError("AnalyzeDependencies", err, "failed to load packages")
-
 		return fail(out, err)
 	}
 
-	// Build dependency graph
 	depGraph := make(map[string][]string)
 	pkgMap := make(map[string]*packages.Package)
-
-	for _, pkg := range pkgs {
-		pkgMap[pkg.PkgPath] = pkg
-
-		imports := []string{}
-		for impPath := range pkg.Imports {
-			imports = append(imports, impPath)
-			depGraph[pkg.PkgPath] = append(depGraph[pkg.PkgPath], impPath)
-		}
-	}
-
-	// Calculate fan-in for each package
 	fanIn := make(map[string]int)
 
 	for _, pkg := range pkgs {
-		for _, impPath := range depGraph[pkg.PkgPath] {
+		key := normalizePackagePath(pkg)
+		if key == "" {
+			continue
+		}
+
+		pkgMap[key] = pkg
+
+		for impPath := range pkg.Imports {
+			depGraph[key] = append(depGraph[key], impPath)
 			fanIn[impPath]++
 		}
 	}
 
-	// Create dependency entries
-	for _, pkg := range pkgs {
-		imports := []string{}
+	filteredKeys := make(map[string]struct{}, len(filteredPkgs))
+	for _, pkg := range filteredPkgs {
+		key := normalizePackagePath(pkg)
+		if key != "" {
+			filteredKeys[key] = struct{}{}
+		}
+	}
+
+	for _, pkg := range filteredPkgs {
+		key := normalizePackagePath(pkg)
+
+		imports := make([]string, 0, len(pkg.Imports))
 		for impPath := range pkg.Imports {
 			imports = append(imports, impPath)
 		}
 
 		fanOut := len(imports)
-		fanInCount := fanIn[pkg.PkgPath]
+		fanInCount := fanIn[key]
 
 		out.Dependencies = append(out.Dependencies, PackageDependency{
-			Package: pkg.PkgPath,
+			Package: key,
 			Imports: imports,
 			FanIn:   fanInCount,
 			FanOut:  fanOut,
@@ -207,7 +225,21 @@ func AnalyzeDependencies(ctx context.Context, req *mcp.CallToolRequest, input An
 						}
 
 						cycle := path[cycleStart:]
-						out.Cycles = append(out.Cycles, cycle)
+
+						includeCycle := len(filteredKeys) == 0
+						if !includeCycle {
+							for _, item := range cycle {
+								if _, ok := filteredKeys[item]; ok {
+									includeCycle = true
+
+									break
+								}
+							}
+						}
+
+						if includeCycle {
+							out.Cycles = append(out.Cycles, cycle)
+						}
 
 						return true
 					}
@@ -249,47 +281,43 @@ func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input Anal
 	AnalyzeComplexityOutput,
 	error,
 ) {
-	start := logStart("AnalyzeComplexity", map[string]string{"dir": input.Dir})
+	start := logStart("AnalyzeComplexity", logFields(
+		input.Dir,
+		newLogField("package", input.Package),
+	))
 	out := AnalyzeComplexityOutput{}
 
 	defer func() { logEnd("AnalyzeComplexity", start, len(out.Functions)) }()
 
-	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedCompiledGoFiles | packages.NeedTypesInfo
+	mode := loadModeSyntaxTypesNamed
 
-	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
+	_, filteredPkgs, err := loadFilteredPackages(ctx, input.Dir, mode, input.Package, "AnalyzeComplexity")
 	if err != nil {
-		logError("AnalyzeComplexity", err, "failed to load packages")
-
 		return fail(out, err)
 	}
 
 	functions := make([]FunctionComplexity, 0)
 
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Syntax {
-			absPath := pkg.Fset.File(file.Pos()).Name()
-			relPath, _ := filepath.Rel(input.Dir, absPath)
-
-			ast.Inspect(file, func(n ast.Node) bool {
-				fd, ok := n.(*ast.FuncDecl)
-				if !ok || fd.Body == nil {
-					return true
-				}
-
-				pos := pkg.Fset.Position(fd.Pos())
-				lines := pkg.Fset.Position(fd.End()).Line - pos.Line
-				visitor := &ComplexityVisitor{
-					Ctx: ctx, Fset: pkg.Fset, Nesting: 0, MaxNesting: 0, Cyclomatic: 1,
-				}
-				ast.Walk(visitor, fd.Body)
-				functions = append(functions, FunctionComplexity{
-					Name: fd.Name.Name, File: relPath, Line: pos.Line,
-					Lines: lines, Nesting: visitor.MaxNesting, Cyclomatic: visitor.Cyclomatic,
-				})
-
+	if err := walkPackageFiles(ctx, filteredPkgs, input.Dir, func(pkg *packages.Package, file *ast.File, relPath string, _ int) error {
+		ast.Inspect(file, func(n ast.Node) bool {
+			fd, ok := n.(*ast.FuncDecl)
+			if !ok || fd.Body == nil {
 				return true
+			}
+
+			pos := pkg.Fset.Position(fd.Pos())
+			lines, nesting, cyclomatic := computeFunctionMetrics(ctx, pkg.Fset, fd)
+			functions = append(functions, FunctionComplexity{
+				Name: fd.Name.Name, File: relPath, Line: pos.Line,
+				Lines: lines, Nesting: nesting, Cyclomatic: cyclomatic,
 			})
-		}
+
+			return true
+		})
+
+		return nil
+	}); err != nil {
+		return fail(out, err)
 	}
 
 	out.Functions = groupFunctionComplexityByFile(functions)
@@ -360,22 +388,23 @@ func MetricsSummary(ctx context.Context, req *mcp.CallToolRequest, input Metrics
 	MetricsSummaryOutput,
 	error,
 ) {
-	start := logStart("MetricsSummary", map[string]string{"dir": input.Dir})
+	start := logStart("MetricsSummary", logFields(
+		input.Dir,
+		newLogField("package", input.Package),
+	))
 	out := MetricsSummaryOutput{}
 
 	defer func() { logEnd("MetricsSummary", start, 0) }()
 
-	mode := packages.NeedSyntax | packages.NeedTypes | packages.NeedCompiledGoFiles | packages.NeedTypesInfo | packages.NeedName
+	mode := loadModeSyntaxTypesNamed
 
-	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
+	_, filteredPkgs, err := loadFilteredPackages(ctx, input.Dir, mode, input.Package, "MetricsSummary")
 	if err != nil {
-		logError("MetricsSummary", err, "failed to load packages")
-
 		return fail(out, err)
 	}
 
 	// Count packages
-	out.PackageCount = len(pkgs)
+	out.PackageCount = len(filteredPkgs)
 
 	// Initialize counters
 	var (
@@ -389,43 +418,48 @@ func MetricsSummary(ctx context.Context, req *mcp.CallToolRequest, input Metrics
 
 	// Count symbols and calculate complexity
 
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Syntax {
-			absPath := pkg.Fset.File(file.Pos()).Name()
+	if err := walkPackageFiles(ctx, filteredPkgs, input.Dir, func(pkg *packages.Package, file *ast.File, _ string, idx int) error {
+		absPath := pkg.Fset.File(file.Pos()).Name()
+		if absPath == "" {
+			if len(pkg.CompiledGoFiles) > idx {
+				absPath = pkg.CompiledGoFiles[idx]
+			} else if len(pkg.GoFiles) > idx {
+				absPath = pkg.GoFiles[idx]
+			}
+		}
 
-			// Count lines in this file
-			content, err := os.ReadFile(absPath)
-			if err == nil {
+		if absPath != "" {
+			if content, err := os.ReadFile(absPath); err == nil {
 				lines := strings.Split(string(content), "\n")
 				lineCount += len(lines)
 				fileCount++
 			}
-
-			ast.Inspect(file, func(n ast.Node) bool {
-				switch decl := n.(type) {
-				case *ast.FuncDecl:
-					// Count function and calculate its complexity
-					functionCount++
-
-					if decl.Body != nil {
-						visitor := &ComplexityVisitor{
-							Ctx: ctx, Fset: pkg.Fset, Cyclomatic: 1,
-						}
-						ast.Walk(visitor, decl.Body)
-						totalCyclomatic += visitor.Cyclomatic
-					}
-				case *ast.TypeSpec:
-					switch decl.Type.(type) {
-					case *ast.StructType:
-						structCount++
-					case *ast.InterfaceType:
-						interfaceCount++
-					}
-				}
-
-				return true
-			})
 		}
+
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch decl := n.(type) {
+			case *ast.FuncDecl:
+				functionCount++
+
+				if decl.Body != nil {
+					_, _, cyclomatic := computeFunctionMetrics(ctx, pkg.Fset, decl)
+					totalCyclomatic += cyclomatic
+				}
+			case *ast.TypeSpec:
+				switch decl.Type.(type) {
+				case *ast.StructType:
+					structCount++
+				case *ast.InterfaceType:
+					interfaceCount++
+				}
+			}
+
+			return true
+		})
+
+		return nil
+	}); err != nil {
+		return fail(out, err)
 	}
 
 	out.FunctionCount = functionCount
@@ -443,23 +477,15 @@ func MetricsSummary(ctx context.Context, req *mcp.CallToolRequest, input Metrics
 
 	// Count dead code using existing DeadCode logic
 	deadCodeInput := DeadCodeInput{Dir: input.Dir}
+	if input.Package != "" {
+		deadCodeInput.Package = input.Package
+	}
 
 	_, deadCodeOutput, err := DeadCode(ctx, req, deadCodeInput)
 	if err == nil {
-		out.DeadCodeCount = len(deadCodeOutput.Unused)
+		out.DeadCodeCount = deadCodeOutput.TotalCount
+		out.ExportedUnusedCount = deadCodeOutput.ExportedCount
 	}
-
-	// Count exported but unused symbols separately would require additional analysis
-	// For now, we can approximate by checking exported symbols in the dead code output
-	exportedUnused := 0
-
-	for _, unused := range deadCodeOutput.Unused {
-		if ast.IsExported(unused.Name) {
-			exportedUnused++
-		}
-	}
-
-	out.ExportedUnusedCount = exportedUnused
 
 	return nil, out, nil
 }

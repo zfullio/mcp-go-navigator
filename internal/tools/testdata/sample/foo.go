@@ -13,7 +13,7 @@ func (f *Foo) DoSomething() string {
 	return strings.ToUpper(fmt.Sprint(f.ID))
 }
 
-// deadHelper — приватный метод, который нигде не вызывается
+// deadHelper — приватный метод, который нигде не вызывается.
 func (f *Foo) deadHelper() string {
 	return fmt.Sprintf("helper: %d", f.ID)
 }

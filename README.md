@@ -6,8 +6,8 @@ Go-Navigator-MCP is a Go-based Model Context Protocol (MCP) server that provides
 
 - **List Packages**: Return all Go packages under a given directory
 - **List Symbols**: List all functions, structs, interfaces, and interface methods defined in a package
-- **Find References**: Find all references (definition and usages) of a given identifier
-- **Find Definitions**: Return code locations where a symbol is defined
+- **Find References**: Find all references (definition and usages) of a given identifier, grouped by file with pagination support
+- **Find Definitions**: Return code locations where a symbol is defined, grouped by file with pagination support
 - **Rename Symbol**: Rename all occurrences of an identifier across Go source files in a directory
 - **List Imports**: List all import paths in Go files under a directory
 - **List Interfaces**: List all interfaces in Go files under a directory, including their methods
@@ -69,12 +69,13 @@ Use with any MCP-compatible client to perform code analysis operations.
 ```
 
 #### List Symbols
+The `package` argument should match the module-qualified path reported by `go list`.
 ```json
 {
   "name": "listSymbols",
   "arguments": {
     "dir": "/path/to/go/project",
-    "package": "package/path"
+    "package": "your-module/internal/tools"
   }
 }
 ```
@@ -85,10 +86,13 @@ Use with any MCP-compatible client to perform code analysis operations.
   "name": "findReferences",
   "arguments": {
     "dir": "/path/to/go/project",
-    "ident": "IdentifierName"
+    "ident": "IdentifierName",
+    "limit": 25,
+    "offset": 0
   }
 }
 ```
+Results include a `total` count and are grouped by file to reduce duplication. Omit `limit`/`offset` (or set `limit` to 0) to stream the full set.
 
 #### Find Definitions
 ```json
@@ -96,10 +100,13 @@ Use with any MCP-compatible client to perform code analysis operations.
   "name": "findDefinitions",
   "arguments": {
     "dir": "/path/to/go/project",
-    "ident": "IdentifierName"
+    "ident": "IdentifierName",
+    "limit": 25,
+    "offset": 0
   }
 }
 ```
+Output mirrors `findReferences`: per-file groupings with a `total` count and pagination controls.
 
 #### Rename Symbol
 ```json
@@ -114,21 +121,25 @@ Use with any MCP-compatible client to perform code analysis operations.
 ```
 
 #### List Imports
+Optionally restrict results by package path (use the value from `go list`).
 ```json
 {
   "name": "listImports",
   "arguments": {
-    "dir": "/path/to/go/project"
+    "dir": "/path/to/go/project",
+    "package": "your-module/internal/tools"
   }
 }
 ```
 
 #### List Interfaces
+Optionally restrict results by package path (use the value from `go list`).
 ```json
 {
   "name": "listInterfaces",
   "arguments": {
-    "dir": "/path/to/go/project"
+    "dir": "/path/to/go/project",
+    "package": "your-module/internal/tools"
   }
 }
 ```
@@ -149,7 +160,8 @@ Use with any MCP-compatible client to perform code analysis operations.
 {
   "name": "analyzeComplexity",
   "arguments": {
-    "dir": "/path/to/go/project"
+    "dir": "/path/to/go/project",
+    "package": "module/internal/tools"
   }
 }
 ```
@@ -159,7 +171,10 @@ Use with any MCP-compatible client to perform code analysis operations.
 {
   "name": "deadCode",
   "arguments": {
-    "dir": "/path/to/go/project"
+    "dir": "/path/to/go/project",
+    "package": "module/internal/tools",
+    "includeExported": true,
+    "limit": 10
   }
 }
 ```
@@ -169,7 +184,8 @@ Use with any MCP-compatible client to perform code analysis operations.
 {
   "name": "analyzeDependencies",
   "arguments": {
-    "dir": "/path/to/go/project"
+    "dir": "/path/to/go/project",
+    "package": "module/internal/tools"
   }
 }
 ```
@@ -190,7 +206,8 @@ Use with any MCP-compatible client to perform code analysis operations.
 {
   "name": "metricsSummary",
   "arguments": {
-    "dir": "/path/to/go/project"
+    "dir": "/path/to/go/project",
+    "package": "module/internal/tools"
   }
 }
 ```

@@ -6,6 +6,32 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type logField struct {
+	Key   string
+	Value string
+}
+
+func newLogField(key, value string) logField {
+	return logField{Key: key, Value: value}
+}
+
+func logFields(dir string, extras ...logField) map[string]string {
+	fields := make(map[string]string)
+	if dir != "" {
+		fields["dir"] = dir
+	}
+
+	for _, extra := range extras {
+		if extra.Key == "" || extra.Value == "" {
+			continue
+		}
+
+		fields[extra.Key] = extra.Value
+	}
+
+	return fields
+}
+
 func logStart(tool string, fields map[string]string) time.Time {
 	e := log.Info().Str("tool", tool)
 	for k, v := range fields {

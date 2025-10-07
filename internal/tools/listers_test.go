@@ -78,14 +78,35 @@ func TestListSymbols_WithInvalidPackage(t *testing.T) {
 		Package: "nonexistent/package",
 	}
 
+	_, _, err := tools.ListSymbols(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent package, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "package \"nonexistent/package\" not found") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestListSymbols_WithPackageFilter(t *testing.T) {
+	in := tools.ListSymbolsInput{
+		Dir:     testDir(),
+		Package: "sample",
+	}
+
 	_, out, err := tools.ListSymbols(context.Background(), &mcp.CallToolRequest{}, in)
 	if err != nil {
 		t.Fatalf("ListSymbols error: %v", err)
 	}
 
-	// Should return empty result for non-existent package
-	if len(out.GroupedSymbols) != 0 {
-		t.Errorf("expected 0 symbols for non-existent package, got %v", len(out.GroupedSymbols))
+	if len(out.GroupedSymbols) == 0 {
+		t.Fatalf("expected symbols for sample package, got none")
+	}
+
+	for _, group := range out.GroupedSymbols {
+		if group.Package != "sample" {
+			t.Fatalf("expected only sample package results, got %q", group.Package)
+		}
 	}
 }
 
@@ -131,6 +152,34 @@ func TestListImports_WithInvalidDir(t *testing.T) {
 	_, _, err := tools.ListImports(context.Background(), &mcp.CallToolRequest{}, in)
 	if err == nil {
 		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestListImports_WithInvalidPackage(t *testing.T) {
+	in := tools.ListImportsInput{Dir: testDir(), Package: "nonexistent/package"}
+
+	_, _, err := tools.ListImports(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent package, got nil")
+	}
+}
+
+func TestListImports_WithPackageFilter(t *testing.T) {
+	in := tools.ListImportsInput{Dir: testDir(), Package: "sample"}
+
+	_, out, err := tools.ListImports(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("ListImports error: %v", err)
+	}
+
+	if len(out.Imports) == 0 {
+		t.Fatalf("expected imports for sample package, got none")
+	}
+
+	for _, group := range out.Imports {
+		if !strings.HasSuffix(group.File, ".go") {
+			t.Fatalf("unexpected file name: %s", group.File)
+		}
 	}
 }
 
@@ -218,6 +267,34 @@ func TestListInterfaces_WithInvalidDir(t *testing.T) {
 	_, _, err := tools.ListInterfaces(context.Background(), &mcp.CallToolRequest{}, in)
 	if err == nil {
 		t.Fatalf("expected error for non-existent directory, got nil")
+	}
+}
+
+func TestListInterfaces_WithInvalidPackage(t *testing.T) {
+	in := tools.ListInterfacesInput{Dir: testDir(), Package: "nonexistent/package"}
+
+	_, _, err := tools.ListInterfaces(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for non-existent package, got nil")
+	}
+}
+
+func TestListInterfaces_WithPackageFilter(t *testing.T) {
+	in := tools.ListInterfacesInput{Dir: testDir(), Package: "sample"}
+
+	_, out, err := tools.ListInterfaces(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("ListInterfaces error: %v", err)
+	}
+
+	if len(out.Interfaces) == 0 {
+		t.Fatalf("expected interfaces for sample package, got none")
+	}
+
+	for _, group := range out.Interfaces {
+		if group.Package != "sample" {
+			t.Fatalf("expected only sample package results, got %q", group.Package)
+		}
 	}
 }
 

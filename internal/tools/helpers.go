@@ -3,6 +3,8 @@ package tools
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"go/ast"
 	"go/format"
 	"go/token"
@@ -10,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -76,6 +79,286 @@ func getFileLinesFromPath(path string) []string {
 	}
 
 	return strings.Split(string(data), "\n")
+}
+
+const packageSuggestionLimit = 5
+
+func normalizePackagePath(pkg *packages.Package) string {
+	if pkg == nil {
+		return ""
+	}
+
+	if pkg.PkgPath != "" {
+		return pkg.PkgPath
+	}
+
+	return pkg.Name
+}
+
+func relativePath(baseDir, filename string) string {
+	if filename == "" {
+		return ""
+	}
+
+	absFile := filename
+	if !filepath.IsAbs(absFile) {
+		if abs, err := filepath.Abs(absFile); err == nil {
+			absFile = abs
+		} else {
+			return filepath.ToSlash(filename)
+		}
+	}
+
+	absBase := baseDir
+	if absBase == "" {
+		absBase = "."
+	}
+
+	if !filepath.IsAbs(absBase) {
+		if abs, err := filepath.Abs(absBase); err == nil {
+			absBase = abs
+		} else {
+			return filepath.ToSlash(filename)
+		}
+	}
+
+	rel, err := filepath.Rel(absBase, absFile)
+	if err != nil {
+		return filepath.ToSlash(filename)
+	}
+
+	return filepath.ToSlash(rel)
+}
+
+func resolveFilePath(pkg *packages.Package, inputDir string, fileIndex int, file *ast.File) string {
+	var absPath string
+
+	if f := pkg.Fset.File(file.Pos()); f != nil {
+		absPath = f.Name()
+	}
+
+	if absPath == "" {
+		if len(pkg.CompiledGoFiles) > fileIndex {
+			absPath = pkg.CompiledGoFiles[fileIndex]
+		} else if len(pkg.GoFiles) > fileIndex {
+			absPath = pkg.GoFiles[fileIndex]
+		}
+	}
+
+	if absPath == "" {
+		return ""
+	}
+
+	relPath := relativePath(inputDir, absPath)
+	if relPath == "" {
+		return filepath.ToSlash(absPath)
+	}
+
+	return relPath
+}
+
+func walkPackageFiles(ctx context.Context, pkgs []*packages.Package, dir string, fn func(pkg *packages.Package, file *ast.File, relPath string, fileIndex int) error) error {
+	for _, pkg := range pkgs {
+		for i, file := range pkg.Syntax {
+			if shouldStop(ctx) {
+				return context.Canceled
+			}
+
+			relPath := resolveFilePath(pkg, dir, i, file)
+			err := fn(pkg, file, relPath, i)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func validatePagination(limit, offset int) error {
+	if limit < 0 {
+		return errors.New("limit must be >= 0")
+	}
+
+	if offset < 0 {
+		return errors.New("offset must be >= 0")
+	}
+
+	return nil
+}
+
+func applyPagination(records []locationRecord, offset, limit int) (int, []locationRecord) {
+	total := len(records)
+
+	if offset < 0 {
+		offset = 0
+	}
+
+	if offset > total {
+		offset = total
+	}
+
+	return offset, paginateLocationRecords(records, offset, limit)
+}
+
+func loadFilteredPackages(ctx context.Context, dir string, mode packages.LoadMode, requested, tool string) ([]*packages.Package, []*packages.Package, error) {
+	pkgs, err := loadPackagesWithCache(ctx, dir, mode)
+	if err != nil {
+		logError(tool, err, "failed to load packages")
+
+		return nil, nil, err
+	}
+
+	filtered, err := filterPackagesByRequest(pkgs, requested)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return pkgs, filtered, nil
+}
+
+func filterPackagesByRequest(pkgs []*packages.Package, requested string) ([]*packages.Package, error) {
+	if requested == "" {
+		return pkgs, nil
+	}
+
+	var filtered []*packages.Package
+
+	availableSet := make(map[string]struct{})
+	available := make([]string, 0, len(pkgs))
+
+	for _, pkg := range pkgs {
+		key := normalizePackagePath(pkg)
+		if key != "" {
+			if _, seen := availableSet[key]; !seen {
+				available = append(available, key)
+				availableSet[key] = struct{}{}
+			}
+		}
+
+		if key == requested || pkg.Name == requested {
+			filtered = append(filtered, pkg)
+		}
+	}
+
+	if len(filtered) > 0 {
+		return filtered, nil
+	}
+
+	sort.Strings(available)
+
+	if len(available) > packageSuggestionLimit {
+		available = available[:packageSuggestionLimit]
+	}
+
+	suggestion := ""
+	if len(available) > 0 {
+		suggestion = "; available packages include: " + strings.Join(available, ", ")
+	}
+
+	return nil, fmt.Errorf("package %q not found%s", requested, suggestion)
+}
+
+func collectSymbols(file *ast.File, fset *token.FileSet, pkgPath, relPath string) []Symbol {
+	if file == nil || fset == nil {
+		return nil
+	}
+
+	if pkgPath == "" && file.Name != nil {
+		pkgPath = file.Name.Name
+	}
+
+	symbols := make([]Symbol, 0)
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch decl := n.(type) {
+		case *ast.FuncDecl:
+			symbols = append(symbols, Symbol{
+				Kind:     "func",
+				Name:     decl.Name.Name,
+				Package:  pkgPath,
+				File:     relPath,
+				Line:     fset.Position(decl.Pos()).Line,
+				Exported: decl.Name.IsExported(),
+			})
+		case *ast.TypeSpec:
+			line := fset.Position(decl.Pos()).Line
+			exported := decl.Name.IsExported()
+
+			switch t := decl.Type.(type) {
+			case *ast.StructType:
+				symbols = append(symbols, Symbol{
+					Kind:     "struct",
+					Name:     decl.Name.Name,
+					Package:  pkgPath,
+					File:     relPath,
+					Line:     line,
+					Exported: exported,
+				})
+			case *ast.InterfaceType:
+				symbols = append(symbols, Symbol{
+					Kind:     "interface",
+					Name:     decl.Name.Name,
+					Package:  pkgPath,
+					File:     relPath,
+					Line:     line,
+					Exported: exported,
+				})
+
+				if t.Methods != nil {
+					for _, m := range t.Methods.List {
+						if len(m.Names) == 0 {
+							continue
+						}
+
+						name := m.Names[0]
+						symbols = append(symbols, Symbol{
+							Kind:     "method",
+							Name:     decl.Name.Name + "." + name.Name,
+							Package:  pkgPath,
+							File:     relPath,
+							Line:     fset.Position(m.Pos()).Line,
+							Exported: name.IsExported(),
+						})
+					}
+				}
+			default:
+				symbols = append(symbols, Symbol{
+					Kind:     "type",
+					Name:     decl.Name.Name,
+					Package:  pkgPath,
+					File:     relPath,
+					Line:     line,
+					Exported: exported,
+				})
+			}
+		case *ast.GenDecl:
+			switch decl.Tok {
+			case token.CONST, token.VAR:
+				for _, spec := range decl.Specs {
+					valueSpec, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+
+					for _, name := range valueSpec.Names {
+						symbols = append(symbols, Symbol{
+							Kind:     strings.ToLower(decl.Tok.String()),
+							Name:     name.Name,
+							Package:  pkgPath,
+							File:     relPath,
+							Line:     fset.Position(name.Pos()).Line,
+							Exported: name.IsExported(),
+						})
+					}
+				}
+			}
+		}
+
+		return true
+	})
+
+	return symbols
 }
 
 func extractSnippet(lines []string, line int) string {
@@ -189,7 +472,7 @@ func sameInterface(a, b *types.Interface) bool {
 	}
 
 	// Compare methods between the two interfaces
-	for i := 0; i < a.NumMethods(); i++ {
+	for i := range a.NumMethods() {
 		methodA := a.Method(i)
 		found := false
 
@@ -214,7 +497,7 @@ func sameInterface(a, b *types.Interface) bool {
 
 func interfaceExtends(impl, target *types.Interface) bool {
 	// Check if impl extends target by having at least all of target's methods
-	for i := 0; i < target.NumMethods(); i++ {
+	for i := range target.NumMethods() {
 		targetMethod := target.Method(i)
 		found := false
 
@@ -266,7 +549,13 @@ func findTargetObject(ctx context.Context, pkgs []*packages.Package, ident, kind
 	return nil
 }
 
-func appendDefinition(out *[]Definition, dir string, fset *token.FileSet, pos token.Pos, fileFilter string) {
+type locationRecord struct {
+	File    string
+	Line    int
+	Snippet string
+}
+
+func appendDefinition(out *[]locationRecord, dir string, fset *token.FileSet, pos token.Pos, fileFilter string) {
 	posn := fset.Position(pos)
 	if posn.Filename == "" {
 		return
@@ -276,15 +565,110 @@ func appendDefinition(out *[]Definition, dir string, fset *token.FileSet, pos to
 		return
 	}
 
-	rel, _ := filepath.Rel(dir, posn.Filename)
+	rel := relativePath(dir, posn.Filename)
 	lines := getFileLinesFromPath(posn.Filename)
 	snippet := extractSnippet(lines, posn.Line)
-	*out = append(*out, Definition{File: rel, Line: posn.Line, Snippet: snippet})
+	*out = append(*out, locationRecord{File: rel, Line: posn.Line, Snippet: snippet})
 }
 
-func appendReference(out *[]Reference, dir string, absPath string, line int, snippet string) {
-	rel, _ := filepath.Rel(dir, absPath)
-	*out = append(*out, Reference{File: rel, Line: line, Snippet: snippet})
+func appendReference(out *[]locationRecord, dir string, absPath string, line int, snippet string) {
+	rel := relativePath(dir, absPath)
+	*out = append(*out, locationRecord{File: rel, Line: line, Snippet: snippet})
+}
+
+func sortLocationRecords(records []locationRecord) {
+	sort.SliceStable(records, func(i, j int) bool {
+		if records[i].File == records[j].File {
+			if records[i].Line == records[j].Line {
+				return records[i].Snippet < records[j].Snippet
+			}
+
+			return records[i].Line < records[j].Line
+		}
+
+		return records[i].File < records[j].File
+	})
+}
+
+func paginateLocationRecords(records []locationRecord, offset, limit int) []locationRecord {
+	if offset < 0 {
+		offset = 0
+	}
+
+	if offset >= len(records) {
+		return nil
+	}
+
+	end := len(records)
+	if limit > 0 && offset+limit < end {
+		end = offset + limit
+	}
+
+	return records[offset:end]
+}
+
+func makeReferenceGroups(records []locationRecord) []ReferenceGroup {
+	if len(records) == 0 {
+		return nil
+	}
+
+	groups := make([]ReferenceGroup, 0)
+	index := make(map[string]int, len(records))
+
+	for _, rec := range records {
+		if idx, ok := index[rec.File]; ok {
+			groups[idx].References = append(groups[idx].References, ReferenceEntry{
+				Line:    rec.Line,
+				Snippet: rec.Snippet,
+			})
+
+			continue
+		}
+
+		index[rec.File] = len(groups)
+
+		groups = append(groups, ReferenceGroup{
+			File: rec.File,
+			References: []ReferenceEntry{{
+				Line:    rec.Line,
+				Snippet: rec.Snippet,
+			}},
+		})
+	}
+
+	return groups
+}
+
+func makeDefinitionGroups(records []locationRecord) []DefinitionGroup {
+	if len(records) == 0 {
+		return nil
+	}
+
+	groups := make([]DefinitionGroup, 0)
+	index := make(map[string]int, len(records))
+
+	for _, rec := range records {
+		if idx, ok := index[rec.File]; ok {
+			groups[idx].Definitions = append(groups[idx].Definitions, DefinitionEntry{
+				Line:    rec.Line,
+				Snippet: rec.Snippet,
+			})
+
+			continue
+		}
+
+		index[rec.File] = len(groups)
+
+		groups = append(groups, DefinitionGroup{
+			File: rec.File,
+			Definitions: []DefinitionEntry{{
+				Line:    rec.Line,
+				Snippet: rec.Snippet,
+			}},
+		})
+	}
+
+	return groups
 }
 
 // astEqual compares two AST expressions structurally.
@@ -464,4 +848,24 @@ func diffFiles(oldData, newData []byte, rel string) string {
 	text, _ := difflib.GetUnifiedDiffString(diff)
 
 	return text
+}
+
+func computeFunctionMetrics(ctx context.Context, fset *token.FileSet, fn *ast.FuncDecl) (lines int, maxNesting int, cyclomatic int) {
+	if fn == nil || fn.Body == nil {
+		return 0, 0, 0
+	}
+
+	start := fset.Position(fn.Pos()).Line
+
+	end := fset.Position(fn.End()).Line
+	if end >= start {
+		lines = end - start
+	}
+
+	visitor := &ComplexityVisitor{
+		Ctx: ctx, Fset: fset, Nesting: 0, MaxNesting: 0, Cyclomatic: 1,
+	}
+	ast.Walk(visitor, fn.Body)
+
+	return lines, visitor.MaxNesting, visitor.Cyclomatic
 }

@@ -9,11 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"go-navigator/internal/tools"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"go-navigator/internal/tools"
 )
 
 func main() {
@@ -107,7 +106,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Lists all interfaces and their methods for dependency analysis or mocking.",
+		Description: tools.ListInterfacesDesc,
 	}, tools.ListInterfaces)
 
 	mcp.AddTool[tools.AnalyzeComplexityInput, tools.AnalyzeComplexityOutput](server, &mcp.Tool{
@@ -116,7 +115,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Analyzes function metrics: lines of code, nesting depth, and cyclomatic complexity.",
+		Description: tools.AnalyzeComplexityDesc,
 	}, tools.AnalyzeComplexity)
 
 	mcp.AddTool[tools.DeadCodeInput, tools.DeadCodeOutput](server, &mcp.Tool{
@@ -125,7 +124,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Finds unused functions, variables, constants, and types within the Go project.",
+		Description: tools.DeadCodeDesc,
 	}, tools.DeadCode)
 
 	mcp.AddTool[tools.AnalyzeDependenciesInput, tools.AnalyzeDependenciesOutput](server, &mcp.Tool{
@@ -134,7 +133,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Builds a graph of dependencies between internal packages (imports, cycles, fan-in/fan-out).",
+		Description: tools.AnalyzeDependenciesDesc,
 	}, tools.AnalyzeDependencies)
 
 	mcp.AddTool[tools.FindImplementationsInput, tools.FindImplementationsOutput](server, &mcp.Tool{
@@ -143,7 +142,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: "Shows which concrete types implement interfaces (and vice versa).",
+		Description: tools.FindImplementationsDesc,
 	}, tools.FindImplementations)
 
 	mcp.AddTool[tools.MetricsSummaryInput, tools.MetricsSummaryOutput](server, &mcp.Tool{
@@ -161,7 +160,7 @@ Usage
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: false,
 		},
-		Description: "Allows replacing AST nodes with type-aware understanding (e.g., 'pkg.Foo(x)' -> 'x.Foo()').",
+		Description: tools.ASTRewriteDesc,
 	}, tools.ASTRewrite)
 
 	mcp.AddTool[tools.ReadFuncInput, tools.ReadFuncOutput](server, &mcp.Tool{

@@ -8,6 +8,7 @@ func WithIf(x int) int {
 	if x > 0 {
 		return x
 	}
+
 	return -x
 }
 
@@ -21,5 +22,6 @@ func WithLoopAndSwitch(n int) int {
 			sum -= i
 		}
 	}
+
 	return sum
 }
