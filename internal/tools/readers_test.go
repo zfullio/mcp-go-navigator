@@ -5,19 +5,25 @@ import (
 	"strings"
 	"testing"
 
-	"go-navigator/internal/tools"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go-navigator/internal/tools"
 )
 
-func TestReadFile_Summary(t *testing.T) {
+func TestReadGoFile_Summary(t *testing.T) {
 	t.Parallel()
 
-	in := tools.ReadFileInput{Dir: testDir(), File: "foo.go", Mode: "summary"}
+	in := tools.ReadGoFileInput{
+		Dir:  testDir(),
+		File: "foo.go",
+		Options: tools.ReadGoFileOptions{
+			WithSource:   false,
+			WithComments: false,
+		},
+	}
 
-	_, out, err := tools.ReadFile(context.Background(), &mcp.CallToolRequest{}, in)
+	_, out, err := tools.ReadGoFile(context.Background(), &mcp.CallToolRequest{}, in)
 	if err != nil {
-		t.Fatalf("ReadFile error: %v", err)
+		t.Fatalf("ReadGoFile error: %v", err)
 	}
 
 	if out.Package != "sample" {
@@ -25,11 +31,11 @@ func TestReadFile_Summary(t *testing.T) {
 	}
 
 	if out.Source != "" {
-		t.Errorf("expected source to be empty in summary mode")
+		t.Errorf("expected source to be empty when WithSource=false")
 	}
 
-	if out.LineCount <= 0 {
-		t.Errorf("expected positive line count, got %d", out.LineCount)
+	if len(out.Symbols) == 0 {
+		t.Fatalf("expected symbols to be present, got none")
 	}
 
 	seen := map[string]string{}
@@ -50,22 +56,32 @@ func TestReadFile_Summary(t *testing.T) {
 	}
 }
 
-func TestReadFile_Raw(t *testing.T) {
+func TestReadGoFile_WithSource(t *testing.T) {
 	t.Parallel()
 
-	in := tools.ReadFileInput{Dir: testDir(), File: "foo.go", Mode: "raw"}
+	in := tools.ReadGoFileInput{
+		Dir:  testDir(),
+		File: "foo.go",
+		Options: tools.ReadGoFileOptions{
+			WithSource: true,
+		},
+	}
 
-	_, out, err := tools.ReadFile(context.Background(), &mcp.CallToolRequest{}, in)
+	_, out, err := tools.ReadGoFile(context.Background(), &mcp.CallToolRequest{}, in)
 	if err != nil {
-		t.Fatalf("ReadFile error: %v", err)
+		t.Fatalf("ReadGoFile error: %v", err)
 	}
 
 	if out.Source == "" {
-		t.Fatalf("expected source content in raw mode")
+		t.Fatalf("expected source content when WithSource=true")
 	}
 
-	if out.Package != "" || len(out.Imports) != 0 {
-		t.Errorf("expected package and imports to be empty in raw mode")
+	if out.Package == "" {
+		t.Errorf("expected package name, got empty string")
+	}
+
+	if len(out.Imports) == 0 {
+		t.Errorf("expected imports to be parsed, got none")
 	}
 }
 

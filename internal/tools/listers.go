@@ -24,7 +24,7 @@ import (
 //   - MCP tool call result
 //   - list of found packages
 //   - error if an error occurred while loading packages
-func ListPackages(ctx context.Context, req *mcp.CallToolRequest, input ListPackagesInput) (
+func ListPackages(ctx context.Context, _ *mcp.CallToolRequest, input ListPackagesInput) (
 	*mcp.CallToolResult,
 	ListPackagesOutput,
 	error,
@@ -66,7 +66,7 @@ func ListPackages(ctx context.Context, req *mcp.CallToolRequest, input ListPacka
 //   - MCP tool call result
 //   - list of found symbols
 //   - error if an error occurred while loading packages
-func ListSymbols(ctx context.Context, req *mcp.CallToolRequest, input ListSymbolsInput) (
+func ListSymbols(ctx context.Context, _ *mcp.CallToolRequest, input ListSymbolsInput) (
 	*mcp.CallToolResult,
 	ListSymbolsOutput,
 	error,
@@ -295,7 +295,7 @@ func groupInterfacesByPackage(data map[string][]InterfaceInfo) []InterfaceGroupB
 //   - MCP tool call result
 //   - list of found imports
 //   - error if an error occurred while loading packages
-func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImportsInput) (
+func ListImports(ctx context.Context, _ *mcp.CallToolRequest, input ListImportsInput) (
 	*mcp.CallToolResult,
 	ListImportsOutput,
 	error,
@@ -345,7 +345,7 @@ func ListImports(ctx context.Context, req *mcp.CallToolRequest, input ListImport
 //   - MCP tool call result
 //   - list of found interfaces
 //   - error if an error occurred while loading packages
-func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInterfacesInput) (
+func ListInterfaces(ctx context.Context, _ *mcp.CallToolRequest, input ListInterfacesInput) (
 	*mcp.CallToolResult,
 	ListInterfacesOutput,
 	error,
@@ -427,7 +427,7 @@ func ListInterfaces(ctx context.Context, req *mcp.CallToolRequest, input ListInt
 //   - MCP tool call result
 //   - project schema with detailed structure and dependencies
 //   - error if packages failed to load or parsing encountered issues
-func ProjectSchema(ctx context.Context, req *mcp.CallToolRequest, input ProjectSchemaInput) (
+func ProjectSchema(ctx context.Context, _ *mcp.CallToolRequest, input ProjectSchemaInput) (
 	*mcp.CallToolResult,
 	ProjectSchemaOutput,
 	error,

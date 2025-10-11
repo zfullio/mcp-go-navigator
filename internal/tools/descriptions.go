@@ -193,16 +193,31 @@ Example:
 readFunc { "dir": ".", "name": "TaskService.List" }
 `
 
-// ReadFileDesc describes the readFile tool.
-const ReadFileDesc = `
-Reads a Go source file and returns its package, imports, declared symbols, line count, and optionally full source code.
+// ReadGoFileDesc describes the readGoFile tool.
+const ReadGoFileDesc = `
+Reads and analyzes a Go source file, returning its package name, imports, and declared symbols.
+Optionally includes source code and comments based on the provided options.
 
 Use when:
-- You need to examine the contents or metadata of a file.
-- Supports "raw", "summary", and "ast" modes.
+- You need to inspect or analyze a specific Go source file.
+- You want to extract functions, structs, interfaces, constants, or variables from the file.
+- You need the file's source or symbol metadata for further analysis or refactoring.
+
+Supported fields:
+- options.withSource: include full source code
+- options.withComments: include symbol comments
+- options.includeFunctionBodies: include function bodies (limited by functionBodyLimit)
+- filter.symbolKinds: restrict to specific symbol types (func, struct, interface, var, const)
+- filter.nameContains: filter by substring match
+- filter.exportedOnly: include only exported symbols
 
 Example:
-readFile { "dir": ".", "file": "internal/tools/sample.go", "mode": "summary" }
+readGoFile {
+  "dir": ".",
+  "file": "internal/tools/server.go",
+  "options": { "withSource": true, "withComments": true },
+  "filter": { "symbolKinds": ["func"], "exportedOnly": true }
+}
 `
 
 // ReadStructDesc describes the readStruct tool.

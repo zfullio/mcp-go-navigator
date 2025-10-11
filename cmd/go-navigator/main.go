@@ -9,10 +9,11 @@ import (
 	"syscall"
 	"time"
 
+	"go-navigator/internal/tools"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"go-navigator/internal/tools"
 )
 
 func main() {
@@ -26,7 +27,7 @@ func main() {
 		&mcp.Implementation{
 			Name:    "go-navigator",
 			Title:   "Go Navigator",
-			Version: "v1.4.0",
+			Version: "v1.5.0",
 		},
 		&mcp.ServerOptions{
 			Instructions: strings.TrimSpace(`
@@ -145,15 +146,6 @@ Usage
 		Description: tools.FindImplementationsDesc,
 	}, tools.FindImplementations)
 
-	mcp.AddTool[tools.MetricsSummaryInput, tools.MetricsSummaryOutput](server, &mcp.Tool{
-		Name:  "metricsSummary",
-		Title: "Metrics Summary",
-		Annotations: &mcp.ToolAnnotations{
-			ReadOnlyHint: true,
-		},
-		Description: tools.MetricsSummaryDesc,
-	}, tools.MetricsSummary)
-
 	mcp.AddTool[tools.ASTRewriteInput, tools.ASTRewriteOutput](server, &mcp.Tool{
 		Name:  "astRewrite",
 		Title: "AST Rewrite (Semantic)",
@@ -172,14 +164,14 @@ Usage
 		Description: tools.ReadFuncDesc,
 	}, tools.ReadFunc)
 
-	mcp.AddTool[tools.ReadFileInput, tools.ReadFileOutput](server, &mcp.Tool{
-		Name:  "readFile",
-		Title: "Read File",
+	mcp.AddTool[tools.ReadGoFileInput, tools.ReadGoFileOutput](server, &mcp.Tool{
+		Name:  "readGoFile",
+		Title: "Read Go File",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: tools.ReadFileDesc,
-	}, tools.ReadFile)
+		Description: tools.ReadGoFileDesc,
+	}, tools.ReadGoFile)
 
 	mcp.AddTool[tools.ReadStructInput, tools.ReadStructOutput](server, &mcp.Tool{
 		Name:  "readStruct",

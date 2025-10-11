@@ -276,7 +276,7 @@ func AnalyzeDependencies(ctx context.Context, req *mcp.CallToolRequest, input An
 //   - MCP tool call result
 //   - function complexity analysis result
 //   - error if an error occurred while loading packages
-func AnalyzeComplexity(ctx context.Context, req *mcp.CallToolRequest, input AnalyzeComplexityInput) (
+func AnalyzeComplexity(ctx context.Context, _ *mcp.CallToolRequest, input AnalyzeComplexityInput) (
 	*mcp.CallToolResult,
 	AnalyzeComplexityOutput,
 	error,

@@ -870,3 +870,40 @@ func computeFunctionMetrics(ctx context.Context, fset *token.FileSet, fn *ast.Fu
 
 	return lines, visitor.MaxNesting, visitor.Cyclomatic
 }
+
+// filterSymbols applies user-defined filters (kind, name, exportedOnly).
+func filterSymbols(symbols []Symbol, filter ReadGoFileFilter) []Symbol {
+	if len(symbols) == 0 {
+		return symbols
+	}
+
+	var filtered []Symbol
+
+	for _, s := range symbols {
+		if len(filter.SymbolKinds) > 0 && !contains(filter.SymbolKinds, s.Kind) {
+			continue
+		}
+
+		if filter.NameContains != "" && !strings.Contains(strings.ToLower(s.Name), strings.ToLower(filter.NameContains)) {
+			continue
+		}
+
+		if filter.ExportedOnly && !ast.IsExported(s.Name) {
+			continue
+		}
+
+		filtered = append(filtered, s)
+	}
+
+	return filtered
+}
+
+func contains(list []string, val string) bool {
+	for _, v := range list {
+		if v == val {
+			return true
+		}
+	}
+
+	return false
+}

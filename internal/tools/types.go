@@ -535,20 +535,55 @@ type ReadFuncOutput struct {
 	Function FunctionSource `json:"function" jsonschema:"Extracted function with metadata and source code"`
 }
 
-// ------------------ read file ------------------
+// ------------------ read go file ------------------
 
-// ReadFileInput contains input data for the ReadFile tool.
-type ReadFileInput struct {
-	// Dir - root directory of the project (Go module)
+// ReadGoFileInput contains input data for the ReadGoFile tool.
+type ReadGoFileInput struct {
+	// Dir - root directory of the Go module
 	Dir string `json:"dir" jsonschema:"Root directory of the Go module"`
-	// File - relative path to the file to read
+
+	// File - relative path to the Go source file to read
 	File string `json:"file" jsonschema:"Relative path to the Go source file to read"`
-	// Mode - read mode: "raw" (text only), "summary" (package, imports, symbols, lines), "ast" (full AST analysis)
-	Mode string `json:"mode,omitempty" jsonschema:"Read mode: raw, summary, or ast"`
+
+	// Options - optional parameters controlling how the file is read and analyzed
+	Options ReadGoFileOptions `json:"options,omitempty" jsonschema:"Optional parameters controlling how the file is read and analyzed"`
+
+	// Filter - optional filtering parameters for selecting specific symbols
+	Filter ReadGoFileFilter `json:"filter,omitempty" jsonschema:"Optional filtering parameters for selecting specific symbols"`
+
+	// ContextLines - number of surrounding lines to include for each symbol (for context display)
+	ContextLines int `json:"contextLines,omitempty" jsonschema:"Number of surrounding lines to include for each symbol"`
 }
 
-// ReadFileOutput contains results from the ReadFile tool.
-type ReadFileOutput struct {
+// ReadGoFileFilter defines filters for narrowing which symbols to include.
+type ReadGoFileFilter struct {
+	// SymbolKinds - kinds of symbols to include (e.g., func, struct, interface, var, const)
+	SymbolKinds []string `json:"symbolKinds,omitempty" jsonschema:"Kinds of symbols to include (func, struct, interface, var, const)"`
+
+	// NameContains - optional substring filter for symbol names
+	NameContains string `json:"nameContains,omitempty" jsonschema:"Substring that must appear in the symbol name"`
+
+	// ExportedOnly - if true, include only exported (public) symbols
+	ExportedOnly bool `json:"exportedOnly,omitempty" jsonschema:"If true, include only exported (public) symbols"`
+}
+
+// ReadGoFileOptions defines advanced reading and parsing options.
+type ReadGoFileOptions struct {
+	// WithSource - include the full source code of the file in the output
+	WithSource bool `json:"withSource,omitempty" jsonschema:"Include the full source code of the file in the output"`
+
+	// WithComments - include comments associated with symbols
+	WithComments bool `json:"withComments,omitempty" jsonschema:"Include comments associated with symbols"`
+
+	// IncludeFunctionBodies - include the full text of function bodies for each function symbol
+	IncludeFunctionBodies bool `json:"includeFunctionBodies,omitempty" jsonschema:"Include the full text of function bodies for each function symbol"`
+
+	// FunctionBodyLimit - optional limit (in lines) for included function bodies
+	FunctionBodyLimit int `json:"functionBodyLimit,omitempty" jsonschema:"Optional limit (in lines) for included function bodies"`
+}
+
+// ReadGoFileOutput contains results from the ReadGoFile tool.
+type ReadGoFileOutput struct {
 	// File - path to the read file
 	File string `json:"file" jsonschema:"File path that was read"`
 	// Package - name of the package declared in the file
@@ -557,8 +592,6 @@ type ReadFileOutput struct {
 	Imports []Import `json:"imports,omitempty" jsonschema:"List of imported packages in the file"`
 	// Symbols - functions, structs, interfaces, constants, etc.
 	Symbols []Symbol `json:"symbols,omitempty" jsonschema:"List of declared symbols within the file"`
-	// LineCount - total number of lines in the file
-	LineCount int `json:"lineCount" jsonschema:"Total number of lines in the file"`
 	// Source - source code of the file (if requested mode is raw or ast)
 	Source string `json:"source,omitempty" jsonschema:"Full source code of the file if requested"`
 }

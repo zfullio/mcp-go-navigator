@@ -236,10 +236,10 @@ Optionally restrict results by package path (use the value from `go list`).
 }
 ```
 
-#### Read File
+#### Read Go File
 ```json
 {
-  "name": "readFile",
+  "name": "readGoFile",
   "arguments": {
     "dir": "/path/to/go/project",
     "file": "relative/path/to/file.go",
@@ -269,7 +269,7 @@ The project is structured as follows:
 - `internal/tools/finders.go`: Definition/reference discovery (`findDefinitions`, `findReferences`, `findImplementations`)
 - `internal/tools/analyzers.go`: Metrics and diagnostics (`metricsSummary`, `analyzeComplexity`, `deadCode`, `analyzeDependencies`)
 - `internal/tools/refactorers.go`: Write-capable flows such as `renameSymbol` and `astRewrite`
-- `internal/tools/readers.go`: Source extraction helpers (`readFile`, `readFunc`, `readStruct`)
+- `internal/tools/readers.go`: Source extraction helpers (`readGoFile`, `readFunc`, `readStruct`)
 - `internal/tools/cache.go`, `helpers.go`, `logging.go`, `descriptions.go`: Shared infrastructure, logging, and tool metadata
 - `internal/tools/*_test.go` (e.g., `listers_test.go`, `finders_test.go`, `refactorers_test.go`): Decomposed test suites for each tool category.
 - `internal/tools/testdata/sample/`: Sample Go files used for testing

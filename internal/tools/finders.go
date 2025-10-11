@@ -22,7 +22,7 @@ import (
 //   - MCP tool call result
 //   - list of found references
 //   - error if the symbol is not found or another error occurred
-func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindReferencesInput) (
+func FindReferences(ctx context.Context, _ *mcp.CallToolRequest, input FindReferencesInput) (
 	*mcp.CallToolResult,
 	FindReferencesOutput,
 	error,
@@ -122,7 +122,7 @@ func FindReferences(ctx context.Context, req *mcp.CallToolRequest, input FindRef
 //   - MCP tool call result
 //   - list of found definitions
 //   - error if an error occurred while loading packages
-func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDefinitionsInput) (
+func FindDefinitions(ctx context.Context, _ *mcp.CallToolRequest, input FindDefinitionsInput) (
 	*mcp.CallToolResult,
 	FindDefinitionsOutput,
 	error,
@@ -186,7 +186,7 @@ func FindDefinitions(ctx context.Context, req *mcp.CallToolRequest, input FindDe
 //   - MCP tool call result
 //   - list of found implementations
 //   - error if the interface is not found or another error occurred
-func FindImplementations(ctx context.Context, req *mcp.CallToolRequest, input FindImplementationsInput) (
+func FindImplementations(ctx context.Context, _ *mcp.CallToolRequest, input FindImplementationsInput) (
 	*mcp.CallToolResult,
 	FindImplementationsOutput,
 	error,

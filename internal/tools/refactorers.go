@@ -30,7 +30,7 @@ import (
 //   - MCP tool call result
 //   - rename result with information about changed files
 //   - error if an error occurred while loading packages or the symbol was not found
-func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSymbolInput) (
+func RenameSymbol(ctx context.Context, _ *mcp.CallToolRequest, input RenameSymbolInput) (
 	*mcp.CallToolResult,
 	RenameSymbolOutput,
 	error,
@@ -238,7 +238,7 @@ func RenameSymbol(ctx context.Context, req *mcp.CallToolRequest, input RenameSym
 //   - MCP tool call result
 //   - AST rewrite result
 //   - error if an error occurred while loading packages or parsing expressions
-func ASTRewrite(ctx context.Context, req *mcp.CallToolRequest, input ASTRewriteInput) (
+func ASTRewrite(ctx context.Context, _ *mcp.CallToolRequest, input ASTRewriteInput) (
 	*mcp.CallToolResult,
 	ASTRewriteOutput,
 	error,

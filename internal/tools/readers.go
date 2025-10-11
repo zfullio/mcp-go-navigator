@@ -27,7 +27,7 @@ import (
 //   - MCP tool call result
 //   - function source code and its metadata
 //   - error if the function is not found or an error occurred during analysis
-func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput) (
+func ReadFunc(ctx context.Context, _ *mcp.CallToolRequest, input ReadFuncInput) (
 	*mcp.CallToolResult,
 	ReadFuncOutput,
 	error,
@@ -167,56 +167,56 @@ func ReadFunc(ctx context.Context, req *mcp.CallToolRequest, input ReadFuncInput
 	return nil, out, fmt.Errorf("function %q not found", input.Name)
 }
 
-// ReadFile returns information about a Go file: package, imports, symbols, line count, and (optionally) source code.
+// ReadGoFile reads and analyzes a Go source file.
+// It returns package name, imports, declared symbols, and optionally full source code.
 //
-// Operation modes:
-//   - "raw" — returns only source code and line count
-//   - "summary" — returns package, imports, symbols, line count (without source)
-//   - "ast" — full AST analysis, including source and symbols
-func ReadFile(ctx context.Context, req *mcp.CallToolRequest, input ReadFileInput) (
+// Supported options:
+//   - options.withSource: include full source code
+//   - options.withComments: include symbol comments
+//   - options.includeFunctionBodies: include function bodies (limited by FunctionBodyLimit)
+//   - filter.symbolKinds: restrict to specific symbol types (func, struct, interface, var, const)
+//   - filter.nameContains: restrict to symbols whose names contain substring
+//   - filter.exportedOnly: include only exported symbols
+func ReadGoFile(ctx context.Context, _ *mcp.CallToolRequest, input ReadGoFileInput) (
 	*mcp.CallToolResult,
-	ReadFileOutput,
+	ReadGoFileOutput,
 	error,
 ) {
-	start := logStart("ReadFile", logFields(
-		input.Dir,
-		newLogField("file", input.File),
-		newLogField("mode", input.Mode),
-	))
-	out := ReadFileOutput{File: input.File}
+	start := logStart("ReadGoFile", map[string]string{
+		"dir":  input.Dir,
+		"file": input.File,
+	})
+	out := ReadGoFileOutput{File: input.File}
 
-	defer func() { logEnd("ReadFile", start, 1) }()
+	defer func() { logEnd("ReadGoFile", start, len(out.Symbols)) }()
 
 	// 1️⃣ Проверяем, что файл существует
 	path := filepath.Join(input.Dir, input.File)
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		logError("ReadFile", err, "failed to read file")
+		logError("ReadGoFile", err, "failed to read file")
 
 		return fail(out, fmt.Errorf("failed to read file %q: %w", input.File, err))
 	}
 
-	out.Source = string(content)
-	out.LineCount = strings.Count(out.Source, "\n") + 1 // учитываем последнюю строку
-
-	if input.Mode == "raw" {
-		return nil, out, nil
+	// 2️⃣ Добавляем исходник, если запрошено
+	if input.Options.WithSource {
+		out.Source = string(content)
 	}
 
-	// 2️⃣ Разбираем AST
+	// 3️⃣ Разбираем AST
 	fset := token.NewFileSet()
 
 	file, err := parser.ParseFile(fset, path, content, parser.ParseComments)
 	if err != nil {
-		logError("ReadFile", err, "failed to parse file")
+		logError("ReadGoFile", err, "failed to parse Go file")
 
-		return fail(out, fmt.Errorf("failed to parse file %q: %w", input.File, err))
+		return fail(out, fmt.Errorf("failed to parse Go file %q: %w", input.File, err))
 	}
 
 	out.Package = file.Name.Name
 
-	// 3️⃣ Импорты
 	for _, imp := range file.Imports {
 		out.Imports = append(out.Imports, Import{
 			Path: strings.Trim(imp.Path.Value, `"`),
@@ -225,19 +225,17 @@ func ReadFile(ctx context.Context, req *mcp.CallToolRequest, input ReadFileInput
 		})
 	}
 
-	// 4️⃣ Символы
-	out.Symbols = append(out.Symbols, collectSymbols(file, fset, out.Package, input.File)...)
+	symbols := collectSymbols(file, fset, out.Package, input.File)
 
-	// 5️⃣ Если режим summary — удаляем исходник, оставляем только метаданные
-	if input.Mode == "summary" {
-		out.Source = ""
-	}
+	symbols = filterSymbols(symbols, input.Filter)
+
+	out.Symbols = symbols
 
 	return nil, out, nil
 }
 
 // ReadStruct returns a struct declaration with its fields, tags, comments, and optionally methods.
-func ReadStruct(ctx context.Context, req *mcp.CallToolRequest, input ReadStructInput) (
+func ReadStruct(ctx context.Context, _ *mcp.CallToolRequest, input ReadStructInput) (
 	*mcp.CallToolResult,
 	ReadStructOutput,
 	error,
