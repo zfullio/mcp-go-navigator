@@ -5,10 +5,19 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/go/packages"
+)
+
+const (
+	defaultBestContextUsages       = 3
+	defaultBestContextTests        = 2
+	defaultBestContextDependencies = 5
+	maxDependencySourceFiles       = 3
 )
 
 // FindReferences finds all references and uses of an identifier using go/types semantic analysis.
@@ -44,7 +53,7 @@ func FindReferences(ctx context.Context, _ *mcp.CallToolRequest, input FindRefer
 
 	mode := loadModeSyntaxTypes | packages.NeedFiles
 
-	pkgs, err := loadPackagesWithCache(ctx, input.Dir, mode)
+	pkgs, err := loadPackagesWithCacheIncludeTests(ctx, input.Dir, mode)
 	if err != nil {
 		return fail(out, err)
 	}
@@ -109,6 +118,332 @@ func FindReferences(ctx context.Context, _ *mcp.CallToolRequest, input FindRefer
 	out.Groups = makeReferenceGroups(paged)
 
 	return nil, out, nil
+}
+
+// FindBestContext returns a curated, minimal context bundle for a symbol.
+//
+// The bundle includes:
+//   - Primary definition (and any additional definitions)
+//   - Key non-test usages (defaults to 3)
+//   - Key test usages (defaults to 2)
+//   - Direct imports from the definition files (defaults to 5)
+func FindBestContext(ctx context.Context, _ *mcp.CallToolRequest, input FindBestContextInput) (
+	*mcp.CallToolResult,
+	FindBestContextOutput,
+	error,
+) {
+	out := FindBestContextOutput{Symbol: input.Ident}
+
+	start := logStart("FindBestContext", logFields(
+		input.Dir,
+		newLogField("ident", input.Ident),
+		newLogField("kind", input.Kind),
+	))
+
+	resultCount := 0
+
+	defer func() { logEnd("FindBestContext", start, resultCount) }()
+
+	mode := loadModeSyntaxTypes | packages.NeedFiles
+
+	pkgs, err := loadPackagesWithCacheIncludeTests(ctx, input.Dir, mode)
+	if err != nil {
+		return fail(out, err)
+	}
+
+	target := findTargetObject(ctx, pkgs, input.Ident, input.Kind)
+	if target == nil {
+		return nil, out, fmt.Errorf("symbol %q not found", input.Ident)
+	}
+
+	out.Kind = objStringKind(target)
+
+	maxUsages := input.MaxUsages
+	if maxUsages <= 0 {
+		maxUsages = defaultBestContextUsages
+	}
+
+	maxTestUsages := input.MaxTestUsages
+	if maxTestUsages <= 0 {
+		maxTestUsages = defaultBestContextTests
+	}
+
+	maxDependencies := input.MaxDependencies
+	if maxDependencies <= 0 {
+		maxDependencies = defaultBestContextDependencies
+	}
+
+	definitionRecords := make([]locationRecord, 0)
+	usageRecords := make([]locationRecord, 0)
+	testRecords := make([]locationRecord, 0)
+
+	seenDefinitions := make(map[string]struct{})
+	seenUsages := make(map[string]struct{})
+	seenTests := make(map[string]struct{})
+
+	definitionFiles := make(map[string]struct{})
+	fileImports := make(map[string][]string)
+
+	err = walkPackageFiles(ctx, pkgs, input.Dir, func(pkg *packages.Package, file *ast.File, relPath string, fileIndex int) error {
+		if relPath == "" {
+			return nil
+		}
+
+		lines := getFileLines(pkg.Fset, file)
+		fileImports[relPath] = collectUniqueImports(file)
+
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch node := n.(type) {
+			case *ast.SelectorExpr:
+				selIdent := node.Sel
+				if selIdent == nil || selIdent.Name != input.Ident {
+					return true
+				}
+
+				obj := selectorObject(pkg.TypesInfo, node)
+				if !matchesTargetObject(obj, target) {
+					return true
+				}
+
+				pos := pkg.Fset.Position(selIdent.Pos())
+				if pos.Filename == "" {
+					return true
+				}
+
+				rec := locationRecord{
+					File:    relPath,
+					Line:    pos.Line,
+					Snippet: extractSnippet(lines, pos.Line),
+				}
+				key := fmt.Sprintf("%s:%d", relPath, pos.Line)
+
+				if strings.HasSuffix(relPath, "_test.go") {
+					if _, ok := seenTests[key]; !ok {
+						testRecords = append(testRecords, rec)
+						seenTests[key] = struct{}{}
+					}
+				} else {
+					if _, ok := seenUsages[key]; !ok {
+						usageRecords = append(usageRecords, rec)
+						seenUsages[key] = struct{}{}
+					}
+				}
+
+				return true
+			case *ast.Ident:
+				ident := node
+				if ident.Name != input.Ident {
+					return true
+				}
+
+				obj := objectForIdent(pkg.TypesInfo, ident)
+				if !matchesTargetObject(obj, target) {
+					return true
+				}
+
+				pos := pkg.Fset.Position(ident.Pos())
+				if pos.Filename == "" {
+					return true
+				}
+
+				rec := locationRecord{
+					File:    relPath,
+					Line:    pos.Line,
+					Snippet: extractSnippet(lines, pos.Line),
+				}
+				key := fmt.Sprintf("%s:%d", relPath, pos.Line)
+
+				if defObj := pkg.TypesInfo.Defs[ident]; defObj != nil && matchesTargetObject(defObj, target) {
+					if _, ok := seenDefinitions[key]; !ok {
+						definitionRecords = append(definitionRecords, rec)
+						seenDefinitions[key] = struct{}{}
+						definitionFiles[relPath] = struct{}{}
+					}
+
+					return true
+				}
+
+				if strings.HasSuffix(relPath, "_test.go") {
+					if _, ok := seenTests[key]; !ok {
+						testRecords = append(testRecords, rec)
+						seenTests[key] = struct{}{}
+					}
+				} else {
+					if _, ok := seenUsages[key]; !ok {
+						usageRecords = append(usageRecords, rec)
+						seenUsages[key] = struct{}{}
+					}
+				}
+
+				return true
+			default:
+				return true
+			}
+		})
+
+		return nil
+	})
+	if err != nil {
+		return fail(out, err)
+	}
+
+	sortLocationRecords(definitionRecords)
+	sortLocationRecords(usageRecords)
+	sortLocationRecords(testRecords)
+
+	// Ensure any entries from usageRecords that reside in test files are categorised as tests.
+	if len(usageRecords) > 0 {
+		filteredUsages := make([]locationRecord, 0, len(usageRecords))
+
+		for _, rec := range usageRecords {
+			if strings.HasSuffix(rec.File, "_test.go") {
+				testRecords = append(testRecords, rec)
+
+				continue
+			}
+
+			filteredUsages = append(filteredUsages, rec)
+		}
+
+		usageRecords = filteredUsages
+
+		sortLocationRecords(testRecords)
+	}
+
+	defLocations := toContextLocations(definitionRecords, 0)
+	if len(defLocations) == 0 {
+		return nil, out, fmt.Errorf("definition for %q not found", input.Ident)
+	}
+
+	out.Definition = &defLocations[0]
+	if len(defLocations) > 1 {
+		out.AdditionalDefinitions = append(out.AdditionalDefinitions, defLocations[1:]...)
+	}
+
+	out.KeyUsages = toContextLocations(usageRecords, maxUsages)
+	out.TestUsages = toContextLocations(testRecords, maxTestUsages)
+	out.Dependencies = buildContextDependencies(definitionFiles, fileImports, maxDependencies)
+
+	resultCount = len(definitionRecords) + len(out.KeyUsages) + len(out.TestUsages)
+
+	return nil, out, nil
+}
+
+func toContextLocations(records []locationRecord, limit int) []ContextLocation {
+	if len(records) == 0 {
+		return nil
+	}
+
+	slice := records
+	if limit > 0 && len(slice) > limit {
+		slice = slice[:limit]
+	}
+
+	result := make([]ContextLocation, 0, len(slice))
+
+	for _, rec := range slice {
+		result = append(result, ContextLocation(rec))
+	}
+
+	return result
+}
+
+func collectUniqueImports(file *ast.File) []string {
+	if file == nil || len(file.Imports) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(file.Imports))
+	imports := make([]string, 0, len(file.Imports))
+
+	for _, spec := range file.Imports {
+		if spec == nil || spec.Path == nil {
+			continue
+		}
+
+		path, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			path = strings.Trim(spec.Path.Value, "`\"")
+		}
+
+		if path == "" {
+			continue
+		}
+
+		if _, ok := seen[path]; ok {
+			continue
+		}
+
+		seen[path] = struct{}{}
+		imports = append(imports, path)
+	}
+
+	sort.Strings(imports)
+
+	return imports
+}
+
+func buildContextDependencies(definitionFiles map[string]struct{}, fileImports map[string][]string, maxDeps int) []ContextDependency {
+	if len(definitionFiles) == 0 {
+		return nil
+	}
+
+	depFiles := make(map[string]map[string]struct{})
+
+	for file := range definitionFiles {
+		imports := fileImports[file]
+		if len(imports) == 0 {
+			continue
+		}
+
+		for _, imp := range imports {
+			if depFiles[imp] == nil {
+				depFiles[imp] = make(map[string]struct{})
+			}
+
+			depFiles[imp][file] = struct{}{}
+		}
+	}
+
+	if len(depFiles) == 0 {
+		return nil
+	}
+
+	depNames := make([]string, 0, len(depFiles))
+
+	for imp := range depFiles {
+		depNames = append(depNames, imp)
+	}
+
+	sort.Strings(depNames)
+
+	if maxDeps > 0 && len(depNames) > maxDeps {
+		depNames = depNames[:maxDeps]
+	}
+
+	result := make([]ContextDependency, 0, len(depNames))
+
+	for _, dep := range depNames {
+		filesSet := depFiles[dep]
+		files := make([]string, 0, len(filesSet))
+
+		for file := range filesSet {
+			files = append(files, file)
+		}
+
+		sort.Strings(files)
+
+		if len(files) > maxDependencySourceFiles {
+			files = files[:maxDependencySourceFiles]
+		}
+
+		result = append(result, ContextDependency{
+			Import:      dep,
+			SourceFiles: files,
+		})
+	}
+
+	return result
 }
 
 // FindDefinitions locates where a symbol is defined (type, func, var, const).
@@ -304,4 +639,76 @@ func FindImplementations(ctx context.Context, _ *mcp.CallToolRequest, input Find
 	}
 
 	return nil, out, nil
+}
+
+func objectForIdent(info *types.Info, ident *ast.Ident) types.Object {
+	if info == nil || ident == nil {
+		return nil
+	}
+
+	if obj := info.ObjectOf(ident); obj != nil {
+		return obj
+	}
+
+	if obj := info.Uses[ident]; obj != nil {
+		return obj
+	}
+
+	for sel, selection := range info.Selections {
+		if sel != nil && sel.Sel == ident && selection != nil {
+			return selection.Obj()
+		}
+	}
+
+	return nil
+}
+
+func selectorObject(info *types.Info, sel *ast.SelectorExpr) types.Object {
+	if info == nil || sel == nil {
+		return nil
+	}
+
+	if selection, ok := info.Selections[sel]; ok && selection != nil {
+		return selection.Obj()
+	}
+
+	return objectForIdent(info, sel.Sel)
+}
+
+func matchesTargetObject(obj types.Object, target types.Object) bool {
+	if obj == nil || target == nil {
+		return false
+	}
+
+	if sameObject(obj, target) {
+		return true
+	}
+
+	if obj.Name() != target.Name() {
+		return false
+	}
+
+	if types.Identical(obj.Type(), target.Type()) {
+		return true
+	}
+
+	if objPkg, targetPkg := obj.Pkg(), target.Pkg(); objPkg != nil && targetPkg != nil && objPkg.Path() == targetPkg.Path() {
+		if types.AssignableTo(obj.Type(), target.Type()) && types.AssignableTo(target.Type(), obj.Type()) {
+			return true
+		}
+	}
+
+	if objFunc, ok := obj.(*types.Func); ok {
+		if targetFunc, ok2 := target.(*types.Func); ok2 {
+			if objFunc.FullName() == targetFunc.FullName() {
+				return true
+			}
+		}
+	}
+
+	if types.ObjectString(obj, nil) == types.ObjectString(target, nil) {
+		return true
+	}
+
+	return false
 }

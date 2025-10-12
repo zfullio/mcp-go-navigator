@@ -190,7 +190,6 @@ func ReadGoFile(ctx context.Context, _ *mcp.CallToolRequest, input ReadGoFileInp
 
 	defer func() { logEnd("ReadGoFile", start, len(out.Symbols)) }()
 
-	// 1️⃣ Проверяем, что файл существует
 	path := filepath.Join(input.Dir, input.File)
 
 	content, err := os.ReadFile(path)
@@ -200,12 +199,10 @@ func ReadGoFile(ctx context.Context, _ *mcp.CallToolRequest, input ReadGoFileInp
 		return fail(out, fmt.Errorf("failed to read file %q: %w", input.File, err))
 	}
 
-	// 2️⃣ Добавляем исходник, если запрошено
 	if input.Options.WithSource {
 		out.Source = string(content)
 	}
 
-	// 3️⃣ Разбираем AST
 	fset := token.NewFileSet()
 
 	file, err := parser.ParseFile(fset, path, content, parser.ParseComments)

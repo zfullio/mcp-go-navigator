@@ -14,11 +14,18 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-func makeCacheKey(dir string, mode packages.LoadMode) string {
+func makeCacheKey(dir string, mode packages.LoadMode, includeTests bool) string {
 	h := sha256.New()
 	h.Write([]byte(dir))
 	h.Write([]byte("|"))
 	h.Write([]byte(strconv.FormatInt(int64(mode), 10)))
+	h.Write([]byte("|"))
+
+	if includeTests {
+		h.Write([]byte("tests=1"))
+	} else {
+		h.Write([]byte("tests=0"))
+	}
 
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -38,10 +45,18 @@ var packageCache = struct {
 	pkgs map[string]PackageCacheItem
 }{pkgs: make(map[string]PackageCacheItem)}
 
-// loadPackagesWithCache loads Go packages and caches them by (dir, mode),
-// automatically invalidating cache when any source file was modified.
 func loadPackagesWithCache(ctx context.Context, dir string, mode packages.LoadMode) ([]*packages.Package, error) {
-	cacheKey := makeCacheKey(dir, mode)
+	return loadPackagesWithCacheInternal(ctx, dir, mode, false)
+}
+
+func loadPackagesWithCacheIncludeTests(ctx context.Context, dir string, mode packages.LoadMode) ([]*packages.Package, error) {
+	return loadPackagesWithCacheInternal(ctx, dir, mode, true)
+}
+
+// loadPackagesWithCacheInternal loads Go packages and caches them by (dir, mode, includeTests),
+// automatically invalidating cache when any source file was modified.
+func loadPackagesWithCacheInternal(ctx context.Context, dir string, mode packages.LoadMode, includeTests bool) ([]*packages.Package, error) {
+	cacheKey := makeCacheKey(dir, mode, includeTests)
 
 	packageCache.RLock()
 	item, exists := packageCache.pkgs[cacheKey]
@@ -81,6 +96,7 @@ func loadPackagesWithCache(ctx context.Context, dir string, mode packages.LoadMo
 		Mode:    mode,
 		Dir:     dir,
 		Context: ctx,
+		Tests:   includeTests,
 	}
 
 	pkgs, err := packages.Load(cfg, "./...")

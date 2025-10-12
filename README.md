@@ -8,6 +8,8 @@ Go-Navigator-MCP is a Go-based Model Context Protocol (MCP) server that provides
 - **List Symbols**: List all functions, structs, interfaces, and interface methods defined in a package
 - **Find References**: Find all references (definition and usages) of a given identifier, grouped by file with pagination support
 - **Find Definitions**: Return code locations where a symbol is defined, grouped by file with pagination support
+- **Find Best Context**: Return a focused context bundle for a symbol: primary definition, key usages, test coverage, and its direct imports
+- **Find Implementations**: Show which concrete types implement interfaces (and vice versa)
 - **Rename Symbol**: Rename all occurrences of an identifier across Go source files in a directory
 - **List Imports**: List all import paths in Go files under a directory
 - **List Interfaces**: List all interfaces in Go files under a directory, including their methods
@@ -15,7 +17,6 @@ Go-Navigator-MCP is a Go-based Model Context Protocol (MCP) server that provides
 - **Analyze Complexity**: Analyze function metrics including cyclomatic complexity and nesting depth
 - **Detect Dead Code**: Find unused functions, variables, constants, and types within the Go project
 - **Analyze Dependencies**: Build a graph of dependencies between internal packages with fan-in/fan-out and cycle detection
-- **Find Implementations**: Show which concrete types implement interfaces (and vice versa)
 - **Metrics Summary**: Aggregate project metrics including package/struct/interface counts, average complexity, and unused code ratios
 - **AST Rewrite**: Pattern-driven AST transformations with type-aware understanding
 - **Read Function Source**: Get full source code and metadata of a Go function or method by name
@@ -107,6 +108,22 @@ Results include a `total` count and are grouped by file to reduce duplication. O
 }
 ```
 Output mirrors `findReferences`: per-file groupings with a `total` count and pagination controls.
+
+#### Find Best Context
+```json
+{
+  "name": "findBestContext",
+  "arguments": {
+    "dir": "/path/to/go/project",
+    "ident": "IdentifierName",
+    "kind": "func",
+    "maxUsages": 3,
+    "maxTestUsages": 2,
+    "maxDependencies": 5
+  }
+}
+```
+Returns a focused context bundle with the symbol's definition, key usages, and direct imports.
 
 #### Rename Symbol
 ```json
@@ -266,7 +283,7 @@ The project is structured as follows:
 
 - `cmd/go-navigator/main.go`: Entry point for the MCP server that wires every MCP tool
 - `internal/tools/listers.go`: Listing helpers (`listPackages`, `listSymbols`, `listImports`, `listInterfaces`)
-- `internal/tools/finders.go`: Definition/reference discovery (`findDefinitions`, `findReferences`, `findImplementations`)
+- `internal/tools/finders.go`: Definition/reference discovery (`findDefinitions`, `findReferences`, `findBestContext`, `findImplementations`)
 - `internal/tools/analyzers.go`: Metrics and diagnostics (`metricsSummary`, `analyzeComplexity`, `deadCode`, `analyzeDependencies`)
 - `internal/tools/refactorers.go`: Write-capable flows such as `renameSymbol` and `astRewrite`
 - `internal/tools/readers.go`: Source extraction helpers (`readGoFile`, `readFunc`, `readStruct`)

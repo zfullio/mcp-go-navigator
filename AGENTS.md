@@ -52,6 +52,7 @@
 - `listInterfaces` — interfaces grouped per package (`interfaces[{package, interfaces[]}]`).
 - `findDefinitions` — definition sites for identifiers.
 - `findReferences` — all usages with optional `file` / `kind` filters.
+- `findBestContext` — focused context bundle: definition + key usages + direct imports.
 - `findImplementations` — interface ↔ concrete type relationships.
 
 **Source inspection**
@@ -74,7 +75,7 @@
 ## Build & Test Basics
 - Build: `go build -o go-navigator ./cmd/go-navigator`.
 - Recommended test run: `GOCACHE=$(pwd)/.gocache go test ./...` (delete `.gocache/` afterwards if needed).
-- `*_test.go` (e.g., `listers_test.go`, `finders_test.go`, `refactorers_test.go`): Decomposed test suites for each tool category: discovery (`listPackages`), navigation (`listSymbols`, `listImports`, `listInterfaces`, `findDefinitions`, `findReferences`, `findImplementations`), analysis (`analyzeComplexity`, `metricsSummary`, `deadCode`, `analyzeDependencies`), source readers (`readGoFile`, `readFunc`, `readStruct`), refactoring (`renameSymbol`, `astRewrite`), and `HealthCheck`. This structure allows for targeted testing of individual functionalities.
+- `*_test.go` (e.g., `listers_test.go`, `finders_test.go`, `refactorers_test.go`): Decomposed test suites for each tool category: discovery (`listPackages`), navigation (`listSymbols`, `listImports`, `listInterfaces`, `findDefinitions`, `findReferences`, `findBestContext`, `findImplementations`), analysis (`analyzeComplexity`, `metricsSummary`, `deadCode`, `analyzeDependencies`), source readers (`readGoFile`, `readFunc`, `readStruct`), refactoring (`renameSymbol`, `astRewrite`), and `HealthCheck`. This structure allows for targeted testing of individual functionalities.
 
 ## Recommended Agent Flow
 1. Start with `projectSchema` using configurable `depth` parameter (summary, standard, or deep) to get comprehensive structural metadata of the Go module including packages, symbols, interfaces, imports, and dependency graph.
@@ -83,9 +84,10 @@
 4. Analyze dependencies and imports via `analyzeDependencies` and `listImports` to understand the project's topology.
 5. Assess code quality with `analyzeComplexity`, `metricsSummary`, and `deadCode` to identify hotspots and issues.
 6. Navigate to specific elements using `findDefinitions` and `findReferences` for detailed investigation.
-7. Use `findImplementations` to understand type hierarchies and interface relationships.
-8. For refactoring proposals, execute `renameSymbol` with `preview=true` and review the diff + collision report.
-9. When detailed source context is needed, use `readGoFile`/`readFunc`/`readStruct` to get specific code elements.
+7. Use `findBestContext` for a quick, token-efficient snapshot before diving deeper into code elements.
+8. Use `findImplementations` to understand type hierarchies and interface relationships.
+9. For refactoring proposals, execute `renameSymbol` with `preview=true` and review the diff + collision report.
+10. When detailed source context is needed, use `readGoFile`/`readFunc`/`readStruct` to get specific code elements.
 
 ## Operational Notes
 - `helpers.go` still hosts the heavy AST comparison utilities (`compareASTNodes`), while `refactorers.go` carries the complex rename pipeline; treat both as prime refactor targets when feasible.

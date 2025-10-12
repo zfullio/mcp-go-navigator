@@ -43,6 +43,137 @@ func flattenDefinitions(groups []tools.DefinitionGroup) []flatDefinition {
 	return result
 }
 
+func TestFindBestContext(t *testing.T) {
+	t.Parallel()
+
+	in := tools.FindBestContextInput{
+		Dir:   testDir(),
+		Ident: "DoSomething",
+		Kind:  "func",
+	}
+
+	_, out, err := tools.FindBestContext(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindBestContext error: %v", err)
+	}
+
+	if out.Symbol != "DoSomething" {
+		t.Errorf("expected symbol DoSomething, got %s", out.Symbol)
+	}
+
+	if out.Kind != "func" {
+		t.Errorf("expected kind func, got %s", out.Kind)
+	}
+
+	if out.Definition == nil {
+		t.Fatalf("expected definition to be set")
+	}
+
+	if out.Definition.File != "foo.go" {
+		t.Errorf("expected primary definition in foo.go, got %s", out.Definition.File)
+	}
+
+	if len(out.AdditionalDefinitions) != 0 {
+		t.Errorf("expected no additional definitions, got %d", len(out.AdditionalDefinitions))
+	}
+
+	if len(out.KeyUsages) == 0 {
+		t.Fatalf("expected at least one usage, got 0")
+	}
+
+	foundUsage := false
+
+	for _, usage := range out.KeyUsages {
+		if usage.File == "foo_usage.go" {
+			foundUsage = true
+
+			break
+		}
+	}
+
+	if !foundUsage {
+		t.Errorf("expected foo_usage.go to appear in key usages, got %+v", out.KeyUsages)
+	}
+
+	foundTest := false
+
+	for _, testUsage := range out.TestUsages {
+		if testUsage.File == "foo_test.go" {
+			foundTest = true
+
+			break
+		}
+	}
+
+	if !foundTest {
+		t.Errorf("expected foo_test.go to appear in test usages, got %+v", out.TestUsages)
+	}
+
+	if len(out.Dependencies) == 0 {
+		t.Fatalf("expected dependencies to be present")
+	}
+
+	depMap := make(map[string][]string, len(out.Dependencies))
+	for _, dep := range out.Dependencies {
+		depMap[dep.Import] = dep.SourceFiles
+	}
+
+	for _, pkg := range []string{"fmt", "strings"} {
+		files, ok := depMap[pkg]
+		if !ok {
+			t.Fatalf("expected dependency on %s", pkg)
+		}
+
+		if len(files) == 0 || files[0] != "foo.go" {
+			t.Fatalf("expected dependency %s to originate from foo.go, got %v", pkg, files)
+		}
+	}
+}
+
+func TestFindBestContext_Limits(t *testing.T) {
+	t.Parallel()
+
+	in := tools.FindBestContextInput{
+		Dir:             testDir(),
+		Ident:           "DoSomething",
+		Kind:            "func",
+		MaxUsages:       1,
+		MaxTestUsages:   1,
+		MaxDependencies: 1,
+	}
+
+	_, out, err := tools.FindBestContext(context.Background(), &mcp.CallToolRequest{}, in)
+	if err != nil {
+		t.Fatalf("FindBestContext error: %v", err)
+	}
+
+	if len(out.KeyUsages) > 1 {
+		t.Errorf("expected at most 1 usage, got %d", len(out.KeyUsages))
+	}
+
+	if len(out.TestUsages) > 1 {
+		t.Errorf("expected at most 1 test usage, got %d", len(out.TestUsages))
+	}
+
+	if len(out.Dependencies) > 1 {
+		t.Errorf("expected at most 1 dependency, got %d", len(out.Dependencies))
+	}
+}
+
+func TestFindBestContext_NotFound(t *testing.T) {
+	t.Parallel()
+
+	in := tools.FindBestContextInput{
+		Dir:   testDir(),
+		Ident: "UnknownSymbol",
+	}
+
+	_, _, err := tools.FindBestContext(context.Background(), &mcp.CallToolRequest{}, in)
+	if err == nil {
+		t.Fatalf("expected error for unknown symbol, got nil")
+	}
+}
+
 func TestFindReferences(t *testing.T) {
 	t.Parallel()
 

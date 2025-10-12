@@ -9,11 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"go-navigator/internal/tools"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"go-navigator/internal/tools"
 )
 
 func main() {
@@ -82,6 +81,15 @@ Usage
 		},
 		Description: tools.FindReferencesDesc,
 	}, tools.FindReferences)
+
+	mcp.AddTool[tools.FindBestContextInput, tools.FindBestContextOutput](server, &mcp.Tool{
+		Name:  "findBestContext",
+		Title: "Find Best Context",
+		Annotations: &mcp.ToolAnnotations{
+			ReadOnlyHint: true,
+		},
+		Description: tools.FindBestContextDesc,
+	}, tools.FindBestContext)
 
 	mcp.AddTool[tools.RenameSymbolInput, tools.RenameSymbolOutput](server, &mcp.Tool{
 		Name:  "renameSymbol",

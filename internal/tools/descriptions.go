@@ -62,6 +62,22 @@ Example:
 findReferences { "dir": ".", "ident": "TaskService" }
 `
 
+// FindBestContextDesc describes the findBestContext tool.
+const FindBestContextDesc = `
+Returns a focused context bundle for a symbol: primary definition, key usages, test coverage, and its direct imports.
+
+Use when:
+- You want a quick, token-efficient snapshot before diving deeper into the code.
+- You need to reason about a symbol and avoid scanning entire files manually.
+
+Notes:
+- Usages are prioritised to surface the top non-test (default 3) and test (default 2) references; limits are configurable.
+- Dependencies list the imports taken from the definition files, trimmed to the most relevant entries.
+
+Example:
+findBestContext { "dir": ".", "ident": "DoSomething", "kind": "func" }
+`
+
 // RenameSymbolDesc describes the renameSymbol tool.
 const RenameSymbolDesc = `
 Performs a safe, scope-aware rename with dry-run diff and collision detection.

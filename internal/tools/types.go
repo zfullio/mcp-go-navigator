@@ -166,6 +166,60 @@ type FindDefinitionsOutput struct {
 	Groups []DefinitionGroup `json:"groups,omitempty" jsonschema:"Definitions grouped by file"`
 }
 
+// ------------------ best context ------------------
+
+// FindBestContextInput defines input parameters for the findBestContext tool.
+type FindBestContextInput struct {
+	// Dir - root directory of the Go module
+	Dir string `json:"dir" jsonschema:"Root directory of the Go module"`
+	// Ident - name of the symbol to analyse
+	Ident string `json:"ident" jsonschema:"Name of the symbol to analyse"`
+	// Kind - optional filter by symbol kind (func, type, var, const, etc.)
+	Kind string `json:"kind,omitempty" jsonschema:"Optional filter by symbol kind (func, type, var, const, etc.)"`
+	// MaxUsages - maximum number of non-test usages to return (defaults to 3 when <= 0)
+	MaxUsages int `json:"maxUsages,omitempty" jsonschema:"Maximum number of non-test usages to return (defaults to 3 when <= 0)"`
+	// MaxTestUsages - maximum number of test usages to return (defaults to 2 when <= 0)
+	MaxTestUsages int `json:"maxTestUsages,omitempty" jsonschema:"Maximum number of test usages to return (defaults to 2 when <= 0)"`
+	// MaxDependencies - maximum number of dependency imports to return (defaults to 5 when <= 0)
+	MaxDependencies int `json:"maxDependencies,omitempty" jsonschema:"Maximum number of dependency imports to return (defaults to 5 when <= 0)"`
+}
+
+// ContextLocation represents a code location relevant to a symbol.
+type ContextLocation struct {
+	// File - relative path to the file containing the location
+	File string `json:"file" jsonschema:"Relative path to the file containing the location"`
+	// Line - line number where the symbol appears
+	Line int `json:"line" jsonschema:"Line number where the symbol appears"`
+	// Snippet - trimmed line of code providing quick context
+	Snippet string `json:"snippet,omitempty" jsonschema:"Trimmed line of code providing quick context"`
+}
+
+// ContextDependency captures an import that the symbol's definition relies on.
+type ContextDependency struct {
+	// Import - the imported package path
+	Import string `json:"import" jsonschema:"Imported package path"`
+	// SourceFiles - subset of files where this import is required for the symbol
+	SourceFiles []string `json:"sourceFiles,omitempty" jsonschema:"Subset of files where this import is required for the symbol"`
+}
+
+// FindBestContextOutput summarises the minimal context needed to understand a symbol.
+type FindBestContextOutput struct {
+	// Symbol - analysed symbol name
+	Symbol string `json:"symbol" jsonschema:"Analysed symbol name"`
+	// Kind - resolved symbol kind (func, type, var, const, etc.)
+	Kind string `json:"kind,omitempty" jsonschema:"Resolved symbol kind (func, type, var, const, etc.)"`
+	// Definition - primary definition location
+	Definition *ContextLocation `json:"definition,omitempty" jsonschema:"Primary definition location"`
+	// AdditionalDefinitions - other definition locations, if any
+	AdditionalDefinitions []ContextLocation `json:"additionalDefinitions,omitempty" jsonschema:"Other definition locations, if any"`
+	// KeyUsages - curated set of non-test usages
+	KeyUsages []ContextLocation `json:"keyUsages,omitempty" jsonschema:"Curated set of non-test usages"`
+	// TestUsages - curated set of test usages
+	TestUsages []ContextLocation `json:"testUsages,omitempty" jsonschema:"Curated set of test usages"`
+	// Dependencies - trimmed list of imports the definition relies on
+	Dependencies []ContextDependency `json:"dependencies,omitempty" jsonschema:"Trimmed list of imports the definition relies on"`
+}
+
 // ------------------ list imports ------------------
 
 // ListImportsInput contains input data for the ListImports tool.

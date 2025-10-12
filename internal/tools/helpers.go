@@ -463,7 +463,38 @@ func sameObject(a, b types.Object) bool {
 		return true
 	}
 
-	return a.Pkg() == b.Pkg() && a.Pos() == b.Pos()
+	if a.Pos() != token.NoPos && a.Pos() == b.Pos() {
+		return true
+	}
+
+	pkgA, pkgB := a.Pkg(), b.Pkg()
+
+	if pkgA != nil && pkgB != nil {
+		if pkgA.Path() != pkgB.Path() {
+			return false
+		}
+	} else if pkgA != pkgB {
+		return false
+	}
+
+	if a.Name() == b.Name() {
+		typA, typB := a.Type(), b.Type()
+		if typA != nil && typB != nil {
+			if types.Identical(typA, typB) {
+				return true
+			}
+
+			if typA.String() == typB.String() {
+				return true
+			}
+		}
+	}
+
+	if types.ObjectString(a, nil) == types.ObjectString(b, nil) {
+		return true
+	}
+
+	return false
 }
 
 // Helper functions for interface comparison.
