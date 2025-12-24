@@ -296,7 +296,7 @@ func BenchmarkRenameSymbol(b *testing.B) {
 	copyDir(srcDir, tmpDir)
 
 	in := tools.RenameSymbolInput{Dir: tmpDir, OldName: "Foo", NewName: "Bar"}
-	for range b.N {
+	for b.Loop() {
 		_, _, err := tools.RenameSymbol(context.Background(), &mcp.CallToolRequest{}, in)
 		if err != nil {
 			b.Fatal(err)

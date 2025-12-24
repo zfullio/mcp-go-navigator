@@ -81,10 +81,10 @@ The `package` argument should match the module-qualified path reported by `go li
 }
 ```
 
-#### Find References
+#### Get References
 ```json
 {
-  "name": "findReferences",
+  "name": "getReferences",
   "arguments": {
     "dir": "/path/to/go/project",
     "ident": "IdentifierName",
@@ -95,10 +95,10 @@ The `package` argument should match the module-qualified path reported by `go li
 ```
 Results include a `total` count and are grouped by file to reduce duplication. Omit `limit`/`offset` (or set `limit` to 0) to stream the full set.
 
-#### Find Definitions
+#### Get Definitions
 ```json
 {
-  "name": "findDefinitions",
+  "name": "getDefinitions",
   "arguments": {
     "dir": "/path/to/go/project",
     "ident": "IdentifierName",
@@ -107,12 +107,12 @@ Results include a `total` count and are grouped by file to reduce duplication. O
   }
 }
 ```
-Output mirrors `findReferences`: per-file groupings with a `total` count and pagination controls.
+Output mirrors `getReferences`: per-file groupings with a `total` count and pagination controls.
 
-#### Find Best Context
+#### Get Symbol Context
 ```json
 {
-  "name": "findBestContext",
+  "name": "getSymbolContext",
   "arguments": {
     "dir": "/path/to/go/project",
     "ident": "IdentifierName",
@@ -161,10 +161,10 @@ Optionally restrict results by package path (use the value from `go list`).
 }
 ```
 
-#### Project Schema
+#### Get Project Schema
 ```json
 {
-  "name": "projectSchema",
+  "name": "getProjectSchema",
   "arguments": {
     "dir": "/path/to/go/project",
     "depth": "standard"
@@ -172,10 +172,10 @@ Optionally restrict results by package path (use the value from `go list`).
 }
 ```
 
-#### Analyze Complexity
+#### Get Complexity Report
 ```json
 {
-  "name": "analyzeComplexity",
+  "name": "getComplexityReport",
   "arguments": {
     "dir": "/path/to/go/project",
     "package": "module/internal/tools"
@@ -183,10 +183,10 @@ Optionally restrict results by package path (use the value from `go list`).
 }
 ```
 
-#### Detect Dead Code
+#### Get Dead Code Report
 ```json
 {
-  "name": "deadCode",
+  "name": "getDeadCodeReport",
   "arguments": {
     "dir": "/path/to/go/project",
     "package": "module/internal/tools",
@@ -196,10 +196,10 @@ Optionally restrict results by package path (use the value from `go list`).
 }
 ```
 
-#### Analyze Dependencies
+#### Get Dependency Graph
 ```json
 {
-  "name": "analyzeDependencies",
+  "name": "getDependencyGraph",
   "arguments": {
     "dir": "/path/to/go/project",
     "package": "module/internal/tools"
@@ -207,10 +207,10 @@ Optionally restrict results by package path (use the value from `go list`).
 }
 ```
 
-#### Find Implementations
+#### Get Implementations
 ```json
 {
-  "name": "findImplementations",
+  "name": "getImplementations",
   "arguments": {
     "dir": "/path/to/go/project",
     "name": "InterfaceName"
@@ -218,10 +218,10 @@ Optionally restrict results by package path (use the value from `go list`).
 }
 ```
 
-#### Metrics Summary
+#### Get Metrics Summary
 ```json
 {
-  "name": "metricsSummary",
+  "name": "getMetricsSummary",
   "arguments": {
     "dir": "/path/to/go/project",
     "package": "module/internal/tools"
@@ -229,10 +229,10 @@ Optionally restrict results by package path (use the value from `go list`).
 }
 ```
 
-#### AST Rewrite
+#### Rewrite AST
 ```json
 {
-  "name": "astRewrite",
+  "name": "rewriteAst",
   "arguments": {
     "dir": "/path/to/go/project",
     "find": "oldPattern(x)",
@@ -242,10 +242,10 @@ Optionally restrict results by package path (use the value from `go list`).
 }
 ```
 
-#### Read Function Source
+#### Get Function Source
 ```json
 {
-  "name": "readFunc",
+  "name": "getFunctionSource",
   "arguments": {
     "dir": "/path/to/go/project",
     "name": "FunctionName"
@@ -253,10 +253,10 @@ Optionally restrict results by package path (use the value from `go list`).
 }
 ```
 
-#### Read Go File
+#### Get File Info
 ```json
 {
-  "name": "readGoFile",
+  "name": "getFileInfo",
   "arguments": {
     "dir": "/path/to/go/project",
     "file": "relative/path/to/file.go",
@@ -265,10 +265,10 @@ Optionally restrict results by package path (use the value from `go list`).
 }
 ```
 
-#### Read Struct
+#### Get Struct Info
 ```json
 {
-  "name": "readStruct",
+  "name": "getStructInfo",
   "arguments": {
     "dir": "/path/to/go/project",
     "name": "StructName",
@@ -283,10 +283,10 @@ The project is structured as follows:
 
 - `cmd/go-navigator/main.go`: Entry point for the MCP server that wires every MCP tool
 - `internal/tools/listers.go`: Listing helpers (`listPackages`, `listSymbols`, `listImports`, `listInterfaces`)
-- `internal/tools/finders.go`: Definition/reference discovery (`findDefinitions`, `findReferences`, `findBestContext`, `findImplementations`)
-- `internal/tools/analyzers.go`: Metrics and diagnostics (`metricsSummary`, `analyzeComplexity`, `deadCode`, `analyzeDependencies`)
-- `internal/tools/refactorers.go`: Write-capable flows such as `renameSymbol` and `astRewrite`
-- `internal/tools/readers.go`: Source extraction helpers (`readGoFile`, `readFunc`, `readStruct`)
+- `internal/tools/finders.go`: Definition/reference discovery (`getDefinitions`, `getReferences`, `getSymbolContext`, `getImplementations`)
+- `internal/tools/analyzers.go`: Metrics and diagnostics (`getMetricsSummary`, `getComplexityReport`, `getDeadCodeReport`, `getDependencyGraph`)
+- `internal/tools/refactorers.go`: Write-capable flows such as `renameSymbol` and `rewriteAst`
+- `internal/tools/readers.go`: Source extraction helpers (`getFileInfo`, `getFunctionSource`, `getStructInfo`)
 - `internal/tools/cache.go`, `helpers.go`, `logging.go`, `descriptions.go`: Shared infrastructure, logging, and tool metadata
 - `internal/tools/*_test.go` (e.g., `listers_test.go`, `finders_test.go`, `refactorers_test.go`): Decomposed test suites for each tool category.
 - `internal/tools/testdata/sample/`: Sample Go files used for testing

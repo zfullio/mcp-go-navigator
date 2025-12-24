@@ -627,7 +627,7 @@ func BenchmarkDeadCode(b *testing.B) {
 		Dir: benchDir(), // твоя тестовая директория
 	}
 
-	for range b.N {
+	for b.Loop() {
 		_, _, err := tools.DeadCode(context.Background(), &mcp.CallToolRequest{}, in)
 		if err != nil {
 			b.Fatalf("DeadCode error: %v", err)
@@ -640,7 +640,7 @@ func BenchmarkAnalyzeComplexity(b *testing.B) {
 		Dir: benchDir(), // твоя тестовая директория
 	}
 
-	for range b.N {
+	for b.Loop() {
 		_, _, err := tools.AnalyzeComplexity(context.Background(), &mcp.CallToolRequest{}, in)
 		if err != nil {
 			b.Fatalf("AnalyzeComplexity error: %v", err)
@@ -661,6 +661,7 @@ func BenchmarkComplexityVisitor(b *testing.B) {
 
 	// ищем первую функцию
 	var fn *ast.FuncDecl
+
 	ast.Inspect(node, func(n ast.Node) bool {
 		if f, ok := n.(*ast.FuncDecl); ok {
 			fn = f
@@ -675,9 +676,7 @@ func BenchmarkComplexityVisitor(b *testing.B) {
 		b.Fatal("no function found in example.go")
 	}
 
-	b.ResetTimer()
-
-	for range b.N {
+	for b.Loop() {
 		visitor := &tools.ComplexityVisitor{
 			Ctx:        context.Background(),
 			Fset:       fset,

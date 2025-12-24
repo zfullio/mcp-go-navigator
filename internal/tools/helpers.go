@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -504,12 +505,12 @@ func sameInterface(a, b *types.Interface) bool {
 	}
 
 	// Compare methods between the two interfaces
-	for i := range a.NumMethods() {
-		methodA := a.Method(i)
+	for methodA := range a.Methods() {
+		methodA := methodA
 		found := false
 
-		for j := 0; j < b.NumMethods(); j++ {
-			methodB := b.Method(j)
+		for methodB := range b.Methods() {
+			methodB := methodB
 			if methodA.Name() == methodB.Name() {
 				if types.Identical(methodA.Type(), methodB.Type()) {
 					found = true
@@ -529,12 +530,12 @@ func sameInterface(a, b *types.Interface) bool {
 
 func interfaceExtends(impl, target *types.Interface) bool {
 	// Check if impl extends target by having at least all of target's methods
-	for i := range target.NumMethods() {
-		targetMethod := target.Method(i)
+	for targetMethod := range target.Methods() {
+		targetMethod := targetMethod
 		found := false
 
-		for j := 0; j < impl.NumMethods(); j++ {
-			implMethod := impl.Method(j)
+		for implMethod := range impl.Methods() {
+			implMethod := implMethod
 			if targetMethod.Name() == implMethod.Name() &&
 				types.Identical(targetMethod.Type(), implMethod.Type()) {
 				found = true
@@ -930,11 +931,5 @@ func filterSymbols(symbols []Symbol, filter ReadGoFileFilter) []Symbol {
 }
 
 func contains(list []string, val string) bool {
-	for _, v := range list {
-		if v == val {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(list, val)
 }

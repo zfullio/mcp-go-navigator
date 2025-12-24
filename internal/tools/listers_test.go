@@ -430,7 +430,7 @@ func BenchmarkListSymbols(b *testing.B) {
 		Package: "./...",
 	}
 
-	for range b.N {
+	for b.Loop() {
 		_, _, err := tools.ListSymbols(context.Background(), &mcp.CallToolRequest{}, in)
 		if err != nil {
 			b.Fatalf("ListSymbols error: %v", err)

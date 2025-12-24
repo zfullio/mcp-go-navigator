@@ -17,6 +17,7 @@ import (
 
 func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
 	zerolog.SetGlobalLevel(zerolog.InfoLevel)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -65,30 +66,30 @@ Usage
 	}, tools.ListSymbols)
 
 	mcp.AddTool[tools.FindDefinitionsInput, tools.FindDefinitionsOutput](server, &mcp.Tool{
-		Name:  "findDefinitions",
-		Title: "Find Definitions",
+		Name:  "getDefinitions",
+		Title: "Get Definitions",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: tools.FindDefinitionsDesc,
+		Description: tools.GetDefinitionsDesc,
 	}, tools.FindDefinitions)
 
 	mcp.AddTool[tools.FindReferencesInput, tools.FindReferencesOutput](server, &mcp.Tool{
-		Name:  "findReferences",
-		Title: "Find References",
+		Name:  "getReferences",
+		Title: "Get References",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: tools.FindReferencesDesc,
+		Description: tools.GetReferencesDesc,
 	}, tools.FindReferences)
 
 	mcp.AddTool[tools.FindBestContextInput, tools.FindBestContextOutput](server, &mcp.Tool{
-		Name:  "findBestContext",
-		Title: "Find Best Context",
+		Name:  "getSymbolContext",
+		Title: "Get Symbol Context",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: tools.FindBestContextDesc,
+		Description: tools.GetSymbolContextDesc,
 	}, tools.FindBestContext)
 
 	mcp.AddTool[tools.RenameSymbolInput, tools.RenameSymbolOutput](server, &mcp.Tool{
@@ -119,85 +120,85 @@ Usage
 	}, tools.ListInterfaces)
 
 	mcp.AddTool[tools.AnalyzeComplexityInput, tools.AnalyzeComplexityOutput](server, &mcp.Tool{
-		Name:  "analyzeComplexity",
-		Title: "Analyze Complexity",
+		Name:  "getComplexityReport",
+		Title: "Get Complexity Report",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: tools.AnalyzeComplexityDesc,
+		Description: tools.GetComplexityReportDesc,
 	}, tools.AnalyzeComplexity)
 
 	mcp.AddTool[tools.DeadCodeInput, tools.DeadCodeOutput](server, &mcp.Tool{
-		Name:  "deadCode",
-		Title: "Detect Dead Code",
+		Name:  "getDeadCodeReport",
+		Title: "Get Dead Code Report",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: tools.DeadCodeDesc,
+		Description: tools.GetDeadCodeReportDesc,
 	}, tools.DeadCode)
 
 	mcp.AddTool[tools.AnalyzeDependenciesInput, tools.AnalyzeDependenciesOutput](server, &mcp.Tool{
-		Name:  "analyzeDependencies",
-		Title: "Analyze Dependencies",
+		Name:  "getDependencyGraph",
+		Title: "Get Dependency Graph",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: tools.AnalyzeDependenciesDesc,
+		Description: tools.GetDependencyGraphDesc,
 	}, tools.AnalyzeDependencies)
 
 	mcp.AddTool[tools.FindImplementationsInput, tools.FindImplementationsOutput](server, &mcp.Tool{
-		Name:  "findImplementations",
-		Title: "Find Implementations",
+		Name:  "getImplementations",
+		Title: "Get Implementations",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: tools.FindImplementationsDesc,
+		Description: tools.GetImplementationsDesc,
 	}, tools.FindImplementations)
 
 	mcp.AddTool[tools.ASTRewriteInput, tools.ASTRewriteOutput](server, &mcp.Tool{
-		Name:  "astRewrite",
-		Title: "AST Rewrite (Semantic)",
+		Name:  "rewriteAst",
+		Title: "Rewrite AST (Semantic)",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: false,
 		},
-		Description: tools.ASTRewriteDesc,
+		Description: tools.RewriteAstDesc,
 	}, tools.ASTRewrite)
 
 	mcp.AddTool[tools.ReadFuncInput, tools.ReadFuncOutput](server, &mcp.Tool{
-		Name:  "readFunc",
-		Title: "Read Function Source",
+		Name:  "getFunctionSource",
+		Title: "Get Function Source",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: tools.ReadFuncDesc,
+		Description: tools.GetFunctionSourceDesc,
 	}, tools.ReadFunc)
 
 	mcp.AddTool[tools.ReadGoFileInput, tools.ReadGoFileOutput](server, &mcp.Tool{
-		Name:  "readGoFile",
-		Title: "Read Go File",
+		Name:  "getFileInfo",
+		Title: "Get File Info",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: tools.ReadGoFileDesc,
+		Description: tools.GetFileInfoDesc,
 	}, tools.ReadGoFile)
 
 	mcp.AddTool[tools.ReadStructInput, tools.ReadStructOutput](server, &mcp.Tool{
-		Name:  "readStruct",
-		Title: "Read Struct",
+		Name:  "getStructInfo",
+		Title: "Get Struct Info",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint: true,
 		},
-		Description: tools.ReadStructDesc,
+		Description: tools.GetStructInfoDesc,
 	}, tools.ReadStruct)
 
 	mcp.AddTool[tools.ProjectSchemaInput, tools.ProjectSchemaOutput](server, &mcp.Tool{
-		Name:  "projectSchema",
-		Title: "Project Schema",
+		Name:  "getProjectSchema",
+		Title: "Get Project Schema",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:   true,
 			IdempotentHint: true,
 		},
-		Description: tools.ProjectSchemaDesc,
+		Description: tools.GetProjectSchemaDesc,
 	}, tools.ProjectSchema)
 
 	err := tools.HealthCheck()

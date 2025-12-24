@@ -168,7 +168,7 @@ type FindDefinitionsOutput struct {
 
 // ------------------ best context ------------------
 
-// FindBestContextInput defines input parameters for the findBestContext tool.
+// FindBestContextInput defines input parameters for the getSymbolContext tool.
 type FindBestContextInput struct {
 	// Dir - root directory of the Go module
 	Dir string `json:"dir" jsonschema:"Root directory of the Go module"`

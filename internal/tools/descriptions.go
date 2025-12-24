@@ -21,7 +21,7 @@ Lists all functions, structs, interfaces, and methods in a Go package.
 
 Use when:
 - You want to explore available code entities before refactoring or documentation.
-- Useful before using findDefinitions or renameSymbol.
+- Useful before using getDefinitions or renameSymbol.
 
 Notes:
 - Provide the package path exactly as reported by 'go list' (for example, 'go-navigator/internal/tools').
@@ -30,8 +30,8 @@ Example:
 listSymbols { "dir": ".", "package": "go-navigator/internal/tools" }
 `
 
-// FindDefinitionsDesc describes the findDefinitions tool.
-const FindDefinitionsDesc = `
+// GetDefinitionsDesc describes the getDefinitions tool.
+const GetDefinitionsDesc = `
 Locates where a symbol is defined (type, func, var, const).
 
 Use when:
@@ -43,27 +43,27 @@ Notes:
 - Use optional "limit" and "offset" to paginate large result sets.
 
 Example:
-findDefinitions { "dir": ".", "ident": "TaskService" }
+getDefinitions { "dir": ".", "ident": "TaskService" }
 `
 
-// FindReferencesDesc describes the findReferences tool.
-const FindReferencesDesc = `
+// GetReferencesDesc describes the getReferences tool.
+const GetReferencesDesc = `
 Finds all references and usages of an identifier using go/types semantic analysis.
 
 Use when:
 - You want to check where a symbol is used before renaming or deleting it.
-- Ideal companion to findDefinitions.
+- Ideal companion to getDefinitions.
 
 Notes:
 - Results are grouped by file with total counts.
 - Use optional "limit" and "offset" to paginate large result sets.
 
 Example:
-findReferences { "dir": ".", "ident": "TaskService" }
+getReferences { "dir": ".", "ident": "TaskService" }
 `
 
-// FindBestContextDesc describes the findBestContext tool.
-const FindBestContextDesc = `
+// GetSymbolContextDesc describes the getSymbolContext tool.
+const GetSymbolContextDesc = `
 Returns a focused context bundle for a symbol: primary definition, key usages, test coverage, and its direct imports.
 
 Use when:
@@ -75,7 +75,7 @@ Notes:
 - Dependencies list the imports taken from the definition files, trimmed to the most relevant entries.
 
 Example:
-findBestContext { "dir": ".", "ident": "DoSomething", "kind": "func" }
+getSymbolContext { "dir": ".", "ident": "DoSomething", "kind": "func" }
 `
 
 // RenameSymbolDesc describes the renameSymbol tool.
@@ -120,8 +120,8 @@ Example:
 listInterfaces { "dir": ".", "package": "go-navigator/internal/tools" }
 `
 
-// AnalyzeComplexityDesc describes the analyzeComplexity tool.
-const AnalyzeComplexityDesc = `
+// GetComplexityReportDesc describes the getComplexityReport tool.
+const GetComplexityReportDesc = `
 Analyzes function metrics: lines of code, nesting depth, and cyclomatic complexity.
 
 Use when:
@@ -130,11 +130,11 @@ Use when:
 - Optionally scope analysis to a specific package path (e.g. "go-navigator/internal/tools").
 
 Example:
-analyzeComplexity { "dir": ".", "package": "go-navigator/internal/tools" }
+getComplexityReport { "dir": ".", "package": "go-navigator/internal/tools" }
 `
 
-// DeadCodeDesc describes the deadCode tool.
-const DeadCodeDesc = `
+// GetDeadCodeReportDesc describes the getDeadCodeReport tool.
+const GetDeadCodeReportDesc = `
 Finds unused functions, variables, constants, and types within the Go project.
 
 Use when:
@@ -144,11 +144,11 @@ Use when:
 - Optionally restrict scanning to a specific package path (e.g. "go-navigator/internal/tools").
 
 Example:
-deadCode { "dir": ".", "package": "go-navigator/internal/tools", "limit": 10 }
+getDeadCodeReport { "dir": ".", "package": "go-navigator/internal/tools", "limit": 10 }
 `
 
-// AnalyzeDependenciesDesc describes the analyzeDependencies tool.
-const AnalyzeDependenciesDesc = `
+// GetDependencyGraphDesc describes the getDependencyGraph tool.
+const GetDependencyGraphDesc = `
 Builds a graph of dependencies between internal packages (imports, cycles, fan-in/fan-out).
 
 Use when:
@@ -157,11 +157,11 @@ Use when:
 - Optionally scope analysis to a specific package path (e.g. "go-navigator/internal/tools").
 
 Example:
-analyzeDependencies { "dir": ".", "package": "go-navigator/internal/tools" }
+getDependencyGraph { "dir": ".", "package": "go-navigator/internal/tools" }
 `
 
-// FindImplementationsDesc describes the findImplementations tool.
-const FindImplementationsDesc = `
+// GetImplementationsDesc describes the getImplementations tool.
+const GetImplementationsDesc = `
 Shows which concrete types implement interfaces (and vice versa).
 
 Use when:
@@ -169,11 +169,11 @@ Use when:
 - Useful for refactoring or interface-based testing.
 
 Example:
-findImplementations { "dir": ".", "name": "Repository" }
+getImplementations { "dir": ".", "name": "Repository" }
 `
 
-// MetricsSummaryDesc describes the metricsSummary tool.
-const MetricsSummaryDesc = `
+// GetMetricsSummaryDesc describes the getMetricsSummary tool.
+const GetMetricsSummaryDesc = `
 Aggregates general project metrics: package/struct/interface counts, average cyclomatic complexity, and unused code ratios.
 
 Use when:
@@ -182,11 +182,11 @@ Use when:
 - Optionally scope aggregation to a specific package path (e.g. "go-navigator/internal/tools").
 
 Example:
-metricsSummary { "dir": ".", "package": "go-navigator/internal/tools" }
+getMetricsSummary { "dir": ".", "package": "go-navigator/internal/tools" }
 `
 
-// ASTRewriteDesc describes the astRewrite tool.
-const ASTRewriteDesc = `
+// RewriteAstDesc describes the rewriteAst tool.
+const RewriteAstDesc = `
 Performs semantic AST rewriting with pattern matching.
 
 Use when:
@@ -194,11 +194,11 @@ Use when:
 - Supports dry-run preview for safe testing.
 
 Example:
-astRewrite { "dir": ".", "find": "fmt.Println(x)", "replace": "log.Print(x)", "dryRun": true }
+rewriteAst { "dir": ".", "find": "fmt.Println(x)", "replace": "log.Print(x)", "dryRun": true }
 `
 
-// ReadFuncDesc describes the readFunc tool.
-const ReadFuncDesc = `
+// GetFunctionSourceDesc describes the getFunctionSource tool.
+const GetFunctionSourceDesc = `
 Returns the full source code and metadata of a Go function or method by name.
 
 Use when:
@@ -206,11 +206,11 @@ Use when:
 - Helpful for code review, documentation, or AI-assisted editing.
 
 Example:
-readFunc { "dir": ".", "name": "TaskService.List" }
+getFunctionSource { "dir": ".", "name": "TaskService.List" }
 `
 
-// ReadGoFileDesc describes the readGoFile tool.
-const ReadGoFileDesc = `
+// GetFileInfoDesc describes the getFileInfo tool.
+const GetFileInfoDesc = `
 Reads and analyzes a Go source file, returning its package name, imports, and declared symbols.
 Optionally includes source code and comments based on the provided options.
 
@@ -228,7 +228,7 @@ Supported fields:
 - filter.exportedOnly: include only exported symbols
 
 Example:
-readGoFile {
+getFileInfo {
   "dir": ".",
   "file": "internal/tools/server.go",
   "options": { "withSource": true, "withComments": true },
@@ -236,8 +236,8 @@ readGoFile {
 }
 `
 
-// ReadStructDesc describes the readStruct tool.
-const ReadStructDesc = `
+// GetStructInfoDesc describes the getStructInfo tool.
+const GetStructInfoDesc = `
 Returns the declaration of a Go struct, including its fields, tags, comments, and optionally its methods.
 
 Use when:
@@ -245,10 +245,10 @@ Use when:
 - Supports IncludeMethods to list associated methods.
 
 Example:
-readStruct { "dir": ".", "name": "User", "includeMethods": true }
+getStructInfo { "dir": ".", "name": "User", "includeMethods": true }
 `
 
-const ProjectSchemaDesc = `
+const GetProjectSchemaDesc = `
 Aggregates a full structural schema of a Go project including:
 - module name and Go version
 - packages and their imports
@@ -264,5 +264,5 @@ Aggregates a full structural schema of a Go project including:
   * 'deep': extended analysis with additional detailed information (future extensibility)
 
 💡 Example:
-projectSchema { "dir": ".", "depth": "standard" }
+getProjectSchema { "dir": ".", "depth": "standard" }
 `

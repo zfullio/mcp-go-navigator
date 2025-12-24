@@ -589,8 +589,8 @@ func readGoModInfo(dir string) (moduleName, goVersion string) {
 		return "", ""
 	}
 
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(data), "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "module ") {
 			moduleName = strings.TrimSpace(strings.TrimPrefix(line, "module"))

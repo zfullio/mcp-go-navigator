@@ -86,6 +86,7 @@ func RenameSymbol(ctx context.Context, _ *mcp.CallToolRequest, input RenameSymbo
 					// But for methods, we need a Named type or a struct/interface
 					// Let's use the type we got
 					namedType = nil
+
 					if concreteType := typeObj.Type(); concreteType != nil {
 						// Use concreteType for LookupFieldOrMethod
 						// addressable=true to also find methods defined on pointer receivers

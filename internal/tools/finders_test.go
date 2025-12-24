@@ -598,7 +598,7 @@ func BenchmarkFindReferences(b *testing.B) {
 		Ident: "Foo",
 	}
 
-	for range b.N {
+	for b.Loop() {
 		_, _, err := tools.FindReferences(context.Background(), &mcp.CallToolRequest{}, in)
 		if err != nil {
 			b.Fatalf("FindReferences error: %v", err)
@@ -612,7 +612,7 @@ func BenchmarkFindDefinitions(b *testing.B) {
 		Ident: "Foo",
 	}
 
-	for range b.N {
+	for b.Loop() {
 		_, _, err := tools.FindDefinitions(context.Background(), &mcp.CallToolRequest{}, in)
 		if err != nil {
 			b.Fatalf("FindDefinitions error: %v", err)
